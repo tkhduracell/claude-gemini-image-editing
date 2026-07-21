@@ -106,6 +106,9 @@ To prevent file name collisions when multiple agent instances or parallel calls 
 gen_1780123456_a3b2c1d0.png
 ```
 
+### 4. Universal Diagnostics
+The server exposes a `get_help` tool that reports its live configuration — API key status, the active model, and the absolute output directory — plus a full reference of every exposed tool. Agents should call it first when a request fails or the setup is in doubt. Tool failures are returned as `🔴 ...` text strings rather than protocol errors, so callers must check for them before reporting success.
+
 ---
 
 ## 💡 Best Practices for Stateful Editing
@@ -122,3 +125,4 @@ gen_1780123456_a3b2c1d0.png
 ## 🔗 Useful Links
 - [Interactions API Reference Guide](https://ai.google.dev/api/interactions-api)
 - [Raw Interactions API Details](https://ai.google.dev/api/interactions.md.txt)
+- [Project repository](https://github.com/xbill9/nb2lite-skill-claude) — the `nb2lite-agent` MCP server ([server.py](server.py)), the `nb2lite-image` Claude Code skill ([SKILL.md](SKILL.md)), and setup docs ([README.md](README.md))

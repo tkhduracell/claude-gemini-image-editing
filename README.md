@@ -3,6 +3,7 @@
 [![Model: gemini-3.1-flash-lite-image](https://img.shields.io/badge/Model-gemini--3.1--flash--lite--image-orange.svg)](#)
 [![API: Interactions API](https://img.shields.io/badge/API-Interactions%20API-blue.svg)](GEMINI.md)
 [![Protocol: FastMCP](https://img.shields.io/badge/Protocol-FastMCP-green.svg)](#)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-lightgrey.svg)](LICENSE)
 
 This repository contains a high-performance Model Context Protocol (MCP) server for interacting with **gemini-3.1-flash-lite-image**, Google's high-efficiency Gemini Image model designed for exceptional speed, low latency, and high-fidelity image generation and editing.
 
@@ -38,9 +39,11 @@ The MCP server checks the following environment variables on startup and executi
 
 ### 1. Prerequisites
 
-Ensure you have Python 3.10+ installed. Install the required dependencies using the [Makefile](Makefile) or pip:
+Ensure you have Python 3.10+ installed, then clone the repo and install the required dependencies using the [Makefile](Makefile) or pip:
 
 ```bash
+git clone https://github.com/xbill9/nb2lite-skill-claude.git
+cd nb2lite-skill-claude
 make install
 # or
 pip install -r requirements.txt
@@ -57,6 +60,16 @@ source set_env.sh
 
 > [!NOTE]
 > The `set_env.sh` script automatically reads your key from `~/gemini.key` if it exists. If not, it prompts you for the key, stores it securely in `~/gemini.key` for persistence across sessions, and exports both `GEMINI_API_KEY` and `GOOGLE_API_KEY` (fallback).
+
+### 3. One-Command Bootstrap (Claude Code)
+
+To use the agent from Claude Code in this repo, `./init.sh` does the full local setup in one pass — installs the Python dependencies, registers the `nb2lite-agent` MCP server in this repo's `.mcp.json` (pointing at the repo-root [server.py](server.py)), and runs `set_env.sh` for the API key:
+
+```bash
+./init.sh        # or: source init.sh   (also exports the key into your shell)
+```
+
+Then restart Claude Code in the repo and approve the server; `/mcp` should list `nb2lite-agent`.
 
 ---
 
@@ -116,6 +129,9 @@ Uploads a local image file in-line via Base64 and applies edits described in nat
   edit_local_image(image_path="./my_sketch.png", edit_prompt="Render this hand-drawn sketch as a high-fidelity 3D model", aspect_ratio="4:3")
   ```
 
+#### 4. `get_help`
+Reports the server's live configuration (API key status, active model, absolute output directory) and a full reference of every exposed tool. Takes no arguments — call it first when diagnosing setup issues.
+
 ---
 
 ## 🛠️ Development & Commands
@@ -174,3 +190,6 @@ The plugin manifest carries no API key — the server reads `GEMINI_API_KEY` (or
 
 - [GEMINI.md](GEMINI.md) - Complete Interactions API developer guide, Python SDK walkthrough, and raw API specifications.
 - [SKILL.md](SKILL.md) - Claude skill manifest for the `nb2lite-image` skill.
+- [CLAUDE.md](CLAUDE.md) - Contributor guide for Claude Code: repository layout, the snapshot sync model, and coding standards.
+- [references/gemini-interactions-api.md](references/gemini-interactions-api.md) - The Interactions API guide bundled with the skill (vendored; tracked in [skills-lock.json](skills-lock.json)).
+- [LICENSE](LICENSE) - Apache-2.0.
