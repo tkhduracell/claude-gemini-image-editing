@@ -38,13 +38,34 @@ The server's config comes from env vars: `GEMINI_API_KEY` (or `GOOGLE_API_KEY` f
 
 ## Technical Standards: NB2Lite & the Interactions API
 
-When composing or reviewing Interactions API calls (see `references/gemini-interactions-api.md`):
+The Interactions API is Gemini's **stateful** endpoint: each call returns an `interaction_id` representing the turn's visual context persisted server-side, and passing `previous_interaction_id` lets the model edit the existing canvas while preserving character, style, lighting, and pixel continuity — no re-prompting the full scene. Full guide: `references/gemini-interactions-api.md` (and `GEMINI.md`).
 
-- **Always `store=True`** on generations so follow-up edits can chain from the returned interaction ID; chain the **latest** ID, not the original.
-- **Aspect ratios:** `1:1`, `16:9`, `9:16`, `4:3`, `3:4` — set at generation time only; stateful edits inherit the previous turn's ratio.
-- **Thinking levels:** `minimal`/`low` for fast previews, `medium` (default)/`high` for complex rendering or text layout.
+### Request — `client.interactions.create(...)` (google-genai SDK)
+
+| Parameter | Type | Notes |
+| :--- | :--- | :--- |
+| `model` | `str` | `"gemini-3.1-flash-lite-image"` (the server reads `GEMINI_MODEL_NAME`). |
+| `input` | `str` \| `list` | Text prompt, or a list mixing `{"type": "image", "data": <b64>, "mime_type": ...}` and `{"type": "text", "text": ...}` parts for inline local-image edits. |
+| `response_format` | `dict` | `{"type": "image"}`; optional `"aspect_ratio"`: `1:1`, `16:9`, `9:16`, `4:3`, `3:4`. Omit on stateful edits — the ratio is inherited from the previous turn. |
+| `generation_config` | `dict` | `{"thinking_level": "minimal" \| "low" \| "medium" \| "high"}`. |
+| `previous_interaction_id` | `str` | Chain from the **latest** turn's ID — a stale ID silently forks the session from an older state. |
+| `store` | `bool` | Must be `True` for any turn you may edit later; the MCP tools always set it. |
+
+### Response — as consumed by `_handle_response` in `server.py`
+
+- `interaction.id` — the new interaction ID to chain into the next edit (every turn returns a **new** one).
+- `interaction.output_image` — may be absent (report the ID and the no-image note, don't crash); has `.mime_type` (png/webp, else jpg assumed) and `.data` (base64 `str` **or** raw bytes — handle both).
+- Saved as `<prefix>_<unix-ts>_<uuid8>.<ext>` (`gen_`/`edit_`/`edit_local_`) under `IMAGE_OUTPUT_DIR`, created on demand; the UUID suffix keeps concurrent writes collision-free.
+
+### Practices
+
+- **Keep edit prompts incremental** — describe only the change ("make the sky dark blue with lightning"); the stored context holds the rest.
+- **Don't change aspect ratio between stateful turns** — it degrades pixel continuity; pick it at generation time.
+- **Thinking levels:** `minimal`/`low` for fast previews and drafts, `medium` (default)/`high` for complex rendering, accurate text layout, or character composition. Generations are billable — batch related edits and use lower levels when cost matters.
 - **Tool errors return as `🔴 ...` text strings**, not protocol errors — check for them before reporting success.
 - **Universal help:** the agent exposes a standardized `get_help` tool describing its active configuration environment variables and all exposed tools.
+
+Upstream docs: [Interactions API Reference](https://ai.google.dev/api/interactions-api), [raw API details](https://ai.google.dev/api/interactions.md.txt).
 
 ## Coding Standards
 
