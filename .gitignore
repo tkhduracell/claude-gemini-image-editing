@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.jpg
+*.png
+*.webp
+.agents/
+.ruff_cache
+.mypy_cache
+.env
+.mcp.json
