@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.jpg
+!devto-cover.jpg
 *.png
 *.webp
 .agents/

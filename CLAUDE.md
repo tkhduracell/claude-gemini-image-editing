@@ -83,3 +83,4 @@ Upstream docs: [Interactions API Reference](https://ai.google.dev/api/interactio
 - `GEMINI.md` (root) — the complete Interactions API developer guide and raw API specifications
 - `references/gemini-interactions-api.md` — the vendored Interactions API guide bundled with the skill
 - `README.md` — server features, env var table, exposed-tool reference, Makefile commands
+- `devto-article.md` — dev.to post draft covering the repo (background, Interactions API, MCP, skill install paths, examples); its cover image `devto-cover.jpg` was dogfooded with the repo's own `generate_image` tool — keep both in sync with the published post

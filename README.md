@@ -267,4 +267,5 @@ The plugin manifest carries no API key — the server reads `GEMINI_API_KEY` (or
 - [SKILL.md](SKILL.md) - Claude skill manifest for the `nb2lite-image` skill.
 - [CLAUDE.md](CLAUDE.md) - Contributor guide for Claude Code: repository layout, the snapshot sync model, and coding standards.
 - [references/gemini-interactions-api.md](references/gemini-interactions-api.md) - The Interactions API guide bundled with the skill (vendored; tracked in [skills-lock.json](skills-lock.json)).
+- [devto-article.md](devto-article.md) - dev.to post covering the repo (background, Interactions API, MCP, skill install, examples); the cover image ([devto-cover.jpg](devto-cover.jpg)) was generated with this repo's own `generate_image` tool.
 - [LICENSE](LICENSE) - Apache-2.0.
