@@ -138,7 +138,7 @@ Reports the server's live configuration (API key status, active model, absolute 
 
 The MCP server is published to Docker Hub as
 [`xbill9/nb2lite-agent`](https://hub.docker.com/r/xbill9/nb2lite-agent)
-(tags: `latest`, `0.1.0`; `linux/amd64`). The image contains **only** the
+(tags: `latest`, `0.1.1`; `linux/amd64`). The image contains **only** the
 FastMCP server and its open-source dependencies — no Claude Code, no API keys —
 so nothing needs to be installed on the host except Docker itself.
 
@@ -195,7 +195,7 @@ Restart Claude Code and approve the server; `/mcp` should list `nb2lite-agent`.
 ### Build and publish (maintainers)
 
 ```bash
-make docker-build   # xbill9/nb2lite-agent:0.1.0 + :latest from server.py + requirements.txt
+make docker-build   # xbill9/nb2lite-agent:0.1.1 + :latest from server.py + requirements.txt
 make docker-push    # build + push both tags (requires docker login)
 ```
 
