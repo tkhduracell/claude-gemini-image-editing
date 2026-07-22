@@ -43,7 +43,7 @@ Gemini 3.1 Flash Lite Image (`gemini-3.1-flash-lite-image`) is a high-efficiency
 | **`model`** | `str` | Must be set to `"gemini-3.1-flash-lite-image"`. |
 | **`input`** | `str` \| `list` | Text description or a list containing base64 images and text prompts. |
 | **`response_format`** | `dict` | e.g. `{"type": "image"}`. Supports `"aspect_ratio"` (e.g. `"1:1"`, `"16:9"`, `"9:16"`). |
-| **`generation_config`**| `dict` | Configuration for `thinking_level`: `'minimal'`, `'low'`, `'medium'`, or `'high'`. |
+| **`generation_config`**| `dict` | Configuration for `thinking_level`. The spec lists `'minimal'`, `'low'`, `'medium'`, and `'high'`, but `gemini-3.1-flash-lite-image` accepts only `'low'` and `'high'` (others return HTTP 400). |
 | **`previous_interaction_id`** | `str` | Performs stateful image editing/refinement on a prior turn's image. |
 | **`store`** | `bool` | Set to `True` to allow subsequent stateful edits on the image. |
 
@@ -117,8 +117,9 @@ The server exposes a `get_help` tool that reports its live configuration — API
 * **Keep Edit Prompts Incremental**: Instead of repeating the entire original description in your edit prompt, focus only on the incremental changes (e.g. use `"make the sky dark blue with lightning"` rather than repeating `"a landscape under a dark blue sky with lightning"`).
 * **Align Aspect Ratios**: During stateful refinement turns, avoid changing the aspect ratio, as changing ratios between turns can degrade pixel continuity.
 * **Optimize Thinking Budgets**:
-  * Use `'minimal'` or `'low'` for ultra-fast previews and prototyping.
-  * Use `'high'` or `'medium'` when you need complex rendering, text layout accuracy, or advanced character composition.
+  * Use `'low'` for ultra-fast previews and prototyping.
+  * Use `'high'` when you need complex rendering, text layout accuracy, or advanced character composition.
+  * The spec's `'minimal'` and `'medium'` levels are rejected by the live API for this model.
 
 ---
 

@@ -29,8 +29,7 @@ echo "✅ Written API keys to $ENV_FILE"
 
 # Update MCP configs with the absolute path based on the current directory:
 #   .mcp.json                 -> Claude Code (macOS)
-#   .kiro/settings/mcp.json   -> Kiro (legacy)
-for CONFIG_FILE in "$CURRENT_DIR/.mcp.json" "$CURRENT_DIR/.kiro/settings/mcp.json"; do
+for CONFIG_FILE in "$CURRENT_DIR/.mcp.json" ; do
     if [ -f "$CONFIG_FILE" ]; then
         CONFIG_FILE="$CONFIG_FILE" CURRENT_DIR="$CURRENT_DIR" python3 -c "
 import json, os

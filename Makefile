@@ -4,8 +4,10 @@ SKILL_NAME := nb2lite-image
 SKILL_DIR  := .claude/skills/$(SKILL_NAME)
 PLUGIN_DIR := skills/$(SKILL_NAME)
 DIST_DIR   := dist
+IMAGE      := xbill9/nb2lite-agent
+VERSION    := 0.1.1
 
-.PHONY: all help install run test lint clean skill skill-install skill-package init
+.PHONY: all help install run test lint clean skill skill-install skill-package init docker-build docker-push
 
 all: help
 
@@ -26,6 +28,8 @@ help:
 	@echo "  make init TARGET=/path/to/project [ARGS='--output-dir ./images']"
 	@echo "                     - Refresh + install skill AND register the nb2lite-agent MCP"
 	@echo "                       server in TARGET (or globally with ARGS='--global')"
+	@echo "  make docker-build  - Build the $(IMAGE) image ($(VERSION) + latest)"
+	@echo "  make docker-push   - Build + push both tags to Docker Hub"
 	@echo "========================================================="
 
 install:
@@ -69,6 +73,15 @@ skill-package: skill
 	cd $(dir $(SKILL_DIR)) && zip -qr $(CURDIR)/$(DIST_DIR)/$(SKILL_NAME)-skill.zip $(notdir $(SKILL_DIR))
 	@echo "Packaged $(DIST_DIR)/$(SKILL_NAME)-skill.zip"
 	@unzip -l $(DIST_DIR)/$(SKILL_NAME)-skill.zip
+
+# The image contains only server.py + requirements (see .dockerignore — key
+# files can never enter the build context). Bump VERSION with plugin.json.
+docker-build:
+	docker build -t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
+
+docker-push: docker-build
+	docker push $(IMAGE):$(VERSION)
+	docker push $(IMAGE):latest
 
 init: skill
 	@if [ -z "$(TARGET)" ] && ! echo "$(ARGS)" | grep -q -- --global; then \

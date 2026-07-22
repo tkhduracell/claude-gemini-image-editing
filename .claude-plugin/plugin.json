@@ -1,7 +1,7 @@
 {
   "name": "nb2lite-image",
   "description": "Generate and edit images with Google's gemini-3.1-flash-lite-image (NB2Lite) via the stateful Interactions API: text-to-image, multi-turn stateful edits, and local-image editing through the nb2lite-agent MCP server.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "xbill9",
     "url": "https://github.com/xbill9"

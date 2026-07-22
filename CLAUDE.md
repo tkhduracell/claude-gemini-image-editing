@@ -51,7 +51,7 @@ The Interactions API is Gemini's **stateful** endpoint: each call returns an `in
 | `model` | `str` | `"gemini-3.1-flash-lite-image"` (the server reads `GEMINI_MODEL_NAME`). |
 | `input` | `str` \| `list` | Text prompt, or a list mixing `{"type": "image", "data": <b64>, "mime_type": ...}` and `{"type": "text", "text": ...}` parts for inline local-image edits. |
 | `response_format` | `dict` | `{"type": "image"}`; optional `"aspect_ratio"`: `1:1`, `16:9`, `9:16`, `4:3`, `3:4`. Omit on stateful edits — the ratio is inherited from the previous turn. |
-| `generation_config` | `dict` | `{"thinking_level": "minimal" \| "low" \| "medium" \| "high"}`. |
+| `generation_config` | `dict` | `{"thinking_level": "low" \| "high"}` — the generic spec also lists `minimal`/`medium`, but the live API rejects them for this model (HTTP 400). |
 | `previous_interaction_id` | `str` | Chain from the **latest** turn's ID — a stale ID silently forks the session from an older state. |
 | `store` | `bool` | Must be `True` for any turn you may edit later; the MCP tools always set it. |
 
@@ -65,7 +65,7 @@ The Interactions API is Gemini's **stateful** endpoint: each call returns an `in
 
 - **Keep edit prompts incremental** — describe only the change ("make the sky dark blue with lightning"); the stored context holds the rest.
 - **Don't change aspect ratio between stateful turns** — it degrades pixel continuity; pick it at generation time.
-- **Thinking levels:** `minimal`/`low` for fast previews and drafts, `medium` (default)/`high` for complex rendering, accurate text layout, or character composition. Generations are billable — batch related edits and use lower levels when cost matters.
+- **Thinking levels:** `low` (default) for fast previews and drafts, `high` for complex rendering, accurate text layout, or character composition; the spec's `minimal`/`medium` are rejected by the live API for this model. Generations are billable — batch related edits and use `low` when cost matters.
 - **Tool errors return as `🔴 ...` text strings**, not protocol errors — check for them before reporting success.
 - **Universal help:** the agent exposes a standardized `get_help` tool describing its active configuration environment variables and all exposed tools.
 

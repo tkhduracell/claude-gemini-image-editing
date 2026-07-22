@@ -26,7 +26,7 @@ MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "gemini-3.1-flash-lite-image")
 
 # Validation Constraints
 SUPPORTED_ASPECT_RATIOS = {"1:1", "16:9", "9:16", "4:3", "3:4"}
-SUPPORTED_THINKING_LEVELS = {"minimal", "low", "medium", "high"}
+SUPPORTED_THINKING_LEVELS = {"low", "high"}
 
 
 def _get_client() -> genai.Client:
@@ -135,13 +135,13 @@ def _handle_response(interaction: Any, output_prefix: str) -> str:
 
 @mcp.tool()
 def generate_image(
-    prompt: str, aspect_ratio: str = "1:1", thinking_level: str = "medium"
+    prompt: str, aspect_ratio: str = "1:1", thinking_level: str = "low"
 ) -> str:
     """Generates a new image from a text prompt.
 
     - prompt: The text description of the image.
     - aspect_ratio: Aspect ratio of the output image ('1:1', '16:9', '9:16', '4:3', '3:4').
-    - thinking_level: The amount of thought tokens to generate ('minimal', 'low', 'medium', 'high').
+    - thinking_level: The amount of thought tokens to generate ('low', 'high').
     """
     try:
         _validate_inputs(aspect_ratio=aspect_ratio, thinking_level=thinking_level)
@@ -173,14 +173,14 @@ def generate_image(
 def edit_image(
     previous_interaction_id: str,
     edit_prompt: str,
-    thinking_level: str = "medium",
+    thinking_level: str = "low",
 ) -> str:
     """Edits a previously generated image using its interaction ID.
 
     The model maintains contextual elements while applying your edit.
     - previous_interaction_id: The ID from the previous turn.
     - edit_prompt: Natural language description of what to change in the image.
-    - thinking_level: The amount of thought tokens to generate ('minimal', 'low', 'medium', 'high').
+    - thinking_level: The amount of thought tokens to generate ('low', 'high').
     """
     try:
         _validate_inputs(thinking_level=thinking_level)
@@ -212,14 +212,14 @@ def edit_local_image(
     image_path: str,
     edit_prompt: str,
     aspect_ratio: str = "1:1",
-    thinking_level: str = "medium",
+    thinking_level: str = "low",
 ) -> str:
     """Edits a local image using a text prompt description.
 
     - image_path: Path to the local image file.
     - edit_prompt: Natural language description of how to edit or modify the image.
     - aspect_ratio: Aspect ratio of the output image ('1:1', '16:9', '9:16', '4:3', '3:4').
-    - thinking_level: The amount of thought tokens to generate ('minimal', 'low', 'medium', 'high').
+    - thinking_level: The amount of thought tokens to generate ('low', 'high').
     """
     try:
         _validate_inputs(aspect_ratio=aspect_ratio, thinking_level=thinking_level)
@@ -275,18 +275,18 @@ def get_help() -> str:
         "  - *Arguments*:\n"
         "    - `prompt` (str, required): Natural language description of the image.\n"
         "    - `aspect_ratio` (str, optional): Output ratio (default: `'1:1'`). Supported: `1:1`, `16:9`, `9:16`, `4:3`, `3:4`.\n"
-        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'medium'`). Supported: `minimal`, `low`, `medium`, `high`.\n"
+        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'low'`). Supported: `low`, `high`.\n"
         "- **`edit_image`**: Edits a previously generated image using its interaction ID, maintaining continuity.\n"
         "  - *Arguments*:\n"
         "    - `previous_interaction_id` (str, required): The unique interaction ID returned from the previous turn.\n"
         "    - `edit_prompt` (str, required): Natural language description of changes/additions to apply.\n"
-        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'medium'`). Supported: `minimal`, `low`, `medium`, `high`.\n"
+        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'low'`). Supported: `low`, `high`.\n"
         "- **`edit_local_image`**: Uploads a local image file in-line via Base64 and describes edits to apply.\n"
         "  - *Arguments*:\n"
         "    - `image_path` (str, required): Path to the local image file.\n"
         "    - `edit_prompt` (str, required): Natural language description of modifications to apply.\n"
         "    - `aspect_ratio` (str, optional): Output ratio (default: `'1:1'`). Supported: `1:1`, `16:9`, `9:16`, `4:3`, `3:4`.\n"
-        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'medium'`). Supported: `minimal`, `low`, `medium`, `high`.\n"
+        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'low'`). Supported: `low`, `high`.\n"
         "- **`get_help`**: Provides this help text and summarizes the server configuration and available tools.\n\n"
         "#### 💾 File Output & Stateful Session Management\n"
         "- All successful generation and edit requests save the output image locally under `IMAGE_OUTPUT_DIR` using a concurrent-safe naming format: `<prefix>_<timestamp>_<uuid_hex>.<extension>` (e.g. `gen_1780123456_a3b2c1d0.png`).\n"

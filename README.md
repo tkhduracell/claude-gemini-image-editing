@@ -16,7 +16,7 @@ Unlike traditional stateless image models, `gemini-3.1-flash-lite-image` support
 - ⚡ **Low Latency & High Scale**: Under 2-second generation times, offering exceptional quality with blazing-fast speeds.
 - 🔄 **Stateful Multi-Turn Edits**: Maintain pixel and contextual continuity across multiple edits using interaction IDs.
 - 🎨 **Inline Local Image Modding**: Upload existing images in-line via Base64 and describe your edits directly.
-- 🧠 **Thinking Budgets**: Adjust latency vs. quality with configurable reasoning steps (`minimal`, `low`, `medium`, `high`).
+- 🧠 **Thinking Budgets**: Adjust latency vs. quality with configurable reasoning steps (`low`, `high`).
 - ✍️ **Enhanced Text & i18n**: Advanced text rendering in English and 25+ other languages.
 - 📂 **Concurrent File Management**: Thread-safe image saving with UUID-appended unique file naming and custom output folders.
 
@@ -95,7 +95,7 @@ Generates a 1k resolution image from a text prompt and saves it locally.
 * **Arguments**:
   - `prompt` (`str`): The natural language description of the image.
   - `aspect_ratio` (`str`): Supported: `1:1`, `16:9`, `9:16`, `4:3`, `3:4` (Default: `"1:1"`).
-  - `thinking_level` (`str`): Configurable thinking budget: `minimal`, `low`, `medium`, `high` (Default: `"medium"`).
+  - `thinking_level` (`str`): Configurable thinking budget: `low`, `high` (Default: `"low"`).
 * **Usage Example**:
   ```python
   # Tool Call
@@ -108,7 +108,7 @@ Iteratively refines or modifies an existing image while preserving pixel and con
 * **Arguments**:
   - `previous_interaction_id` (`str`): The unique ID returned from the previous generation or edit.
   - `edit_prompt` (`str`): Natural language description of what to change or add in the image.
-  - `thinking_level` (`str`): Configurable thinking budget: `minimal`, `low`, `medium`, `high` (Default: `"medium"`).
+  - `thinking_level` (`str`): Configurable thinking budget: `low`, `high` (Default: `"low"`).
 * **Usage Example**:
   ```python
   # Tool Call
@@ -122,7 +122,7 @@ Uploads a local image file in-line via Base64 and applies edits described in nat
   - `image_path` (`str`): Absolute or relative path to the local image file.
   - `edit_prompt` (`str`): Natural language description of how to edit or modify the image.
   - `aspect_ratio` (`str`): Supported: `1:1`, `16:9`, `9:16`, `4:3`, `3:4` (Default: `"1:1"`).
-  - `thinking_level` (`str`): Configurable thinking budget: `minimal`, `low`, `medium`, `high` (Default: `"medium"`).
+  - `thinking_level` (`str`): Configurable thinking budget: `low`, `high` (Default: `"low"`).
 * **Usage Example**:
   ```python
   # Tool Call
@@ -131,6 +131,79 @@ Uploads a local image file in-line via Base64 and applies edits described in nat
 
 #### 4. `get_help`
 Reports the server's live configuration (API key status, active model, absolute output directory) and a full reference of every exposed tool. Takes no arguments — call it first when diagnosing setup issues.
+
+---
+
+## 🐳 Docker
+
+The MCP server is published to Docker Hub as
+[`xbill9/nb2lite-agent`](https://hub.docker.com/r/xbill9/nb2lite-agent)
+(tags: `latest`, `0.1.0`; `linux/amd64`). The image contains **only** the
+FastMCP server and its open-source dependencies — no Claude Code, no API keys —
+so nothing needs to be installed on the host except Docker itself.
+
+> [!NOTE]
+> This is a third-party community project, not affiliated with or endorsed by
+> Anthropic or Google. You supply your own Gemini API key.
+
+### Quick sanity check
+
+```bash
+docker pull xbill9/nb2lite-agent
+docker run --rm -i -e GEMINI_API_KEY=dummy xbill9/nb2lite-agent
+# The server is now waiting for MCP JSON-RPC on stdin (Ctrl-C to exit).
+```
+
+### Use it from Claude Code
+
+The server saves images to disk and reads local files for `edit_local_image`,
+so the container must see your project directory **at the same absolute path**
+as the host — otherwise the tools report container paths that don't exist on
+your machine. Mount it with `-v "$PWD:$PWD" -w "$PWD"`:
+
+```bash
+claude mcp add nb2lite-agent --env GEMINI_API_KEY="$(cat ~/gemini.key)" -- \
+  docker run --rm -i -e GEMINI_API_KEY -v "$PWD:$PWD" -w "$PWD" xbill9/nb2lite-agent
+```
+
+Or hand-write the equivalent `.mcp.json` entry (replace `/abs/path/to/project`):
+
+```json
+{
+  "mcpServers": {
+    "nb2lite-agent": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-e", "GEMINI_API_KEY",
+        "-v", "/abs/path/to/project:/abs/path/to/project",
+        "-w", "/abs/path/to/project",
+        "xbill9/nb2lite-agent"
+      ],
+      "env": { "GEMINI_API_KEY": "your-key-here" }
+    }
+  }
+}
+```
+
+The bare `-e GEMINI_API_KEY` (no value) forwards the variable from the `env`
+block into the container without ever putting the key in the argument list.
+Add `-e GEMINI_MODEL_NAME` / `-e IMAGE_OUTPUT_DIR` the same way to override
+the model or redirect saved images (the path must be under the mount).
+Restart Claude Code and approve the server; `/mcp` should list `nb2lite-agent`.
+
+### Build and publish (maintainers)
+
+```bash
+make docker-build   # xbill9/nb2lite-agent:0.1.0 + :latest from server.py + requirements.txt
+make docker-push    # build + push both tags (requires docker login)
+```
+
+`.dockerignore` whitelists only `server.py` and `requirements.txt`, so
+key-carrying files (`.env`, `.mcp.json`) can never enter the build context.
+The published image is currently `linux/amd64`; on an arm64 host (Apple
+Silicon) Docker runs it under emulation, or build natively with
+`docker build -t nb2lite-agent .` from a checkout.
 
 ---
 
@@ -149,6 +222,8 @@ Use the [Makefile](Makefile) to streamline common workflows:
 | `make skill-install` | Refreshes + copies the skill to `~/.claude/skills` (all projects). |
 | `make skill-package` | Refreshes + rebuilds `dist/nb2lite-image-skill.zip`. |
 | `make init` | Refreshes + installs the Claude skill into a target project and registers the MCP server (`TARGET=/path ARGS='...'`). |
+| `make docker-build` | Builds the `xbill9/nb2lite-agent` Docker image (version + `latest` tags). |
+| `make docker-push` | Builds + pushes both image tags to Docker Hub. |
 
 ---
 

@@ -114,9 +114,10 @@ Validated by the server — out-of-range values fail fast:
 
 - **Aspect ratios:** `1:1` (default), `16:9`, `9:16`, `4:3`, `3:4`.
   `edit_image` takes no aspect ratio — stateful edits keep the previous turn's.
-- **Thinking levels:** `minimal`, `low`, `medium` (default), `high`. Use
-  `minimal`/`low` for fast previews and prototyping; `medium`/`high` for complex
-  rendering, accurate text layout, or character composition.
+- **Thinking levels:** `low` (default), `high`. Use `low` for fast previews and
+  prototyping; `high` for complex rendering, accurate text layout, or character
+  composition. (The generic Interactions API spec also lists `minimal` and
+  `medium`, but the live API rejects them for this model with HTTP 400.)
 
 ## Best practices & cautions
 
