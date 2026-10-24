@@ -1,18 +1,38 @@
-# nb2lite-agent — MCP stdio server for gemini-3.1-flash-lite-image.
+# nb2lite-agent — MCP stdio server for gemini-3.1-flash-lite-image (NB2Lite).
 # Contains only the MCP server and its open-source deps (no Claude Code, no keys).
-# Run with -i (stdio transport) and pass the key via the environment:
-#   docker run --rm -i -e GEMINI_API_KEY xbill9/nb2lite-agent
-# Mount your project at the same absolute path so saved-image paths are valid
-# on the host: -v "$PWD:$PWD" -w "$PWD"  (see README "Docker" section).
-FROM python:3.12-slim
+#
+# Run with -i (stdio transport) and inherit the key from the environment:
+#   docker run --rm -i -e GEMINI_API_KEY -v "$PWD/images:/images" tkhduracell/nb2lite-agent:0.2.0
+#
+# `-e GEMINI_API_KEY` with no value is deliberate: Docker copies the variable in
+# from the caller's environment, so the key never appears in an image, a manifest
+# or git. Images are written to /images (IMAGE_OUTPUT_DIR); bind-mount a host
+# directory there and set HOST_OUTPUT_DIR to that host path so the server can
+# report paths the host can actually open.
+FROM python:3.13-slim
 
+LABEL org.opencontainers.image.source="https://github.com/tkhduracell/nb2lite-skill-claude" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.title="nb2lite-agent" \
+      org.opencontainers.image.description="MCP stdio server for image generation and stateful editing with Google's gemini-3.1-flash-lite-image via the Interactions API."
+
+# Dependency layer first so it caches independently of server.py changes.
 COPY requirements.txt /opt/nb2lite/requirements.txt
 RUN pip install --no-cache-dir -r /opt/nb2lite/requirements.txt
 
 COPY server.py /opt/nb2lite/server.py
 
-# Default output dir when no workdir mount is used; harmless when -w overrides it.
+# Non-root so images written to a bind mount are not root-owned on the host.
+# /images must exist and be owned by uid 1000 BEFORE the USER switch, otherwise
+# a container run without a bind mount has nowhere writable to save to.
+RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin nb2lite \
+    && mkdir -p /images \
+    && chown 1000:1000 /images
+
+ENV PYTHONUNBUFFERED=1 \
+    IMAGE_OUTPUT_DIR=/images
+
+USER 1000
 WORKDIR /images
-ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["python", "/opt/nb2lite/server.py"]

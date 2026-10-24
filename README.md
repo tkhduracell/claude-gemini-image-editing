@@ -1,271 +1,302 @@
 # 🌌 NB2Lite Agent
 
-[![Model: gemini-3.1-flash-lite-image](https://img.shields.io/badge/Model-gemini--3.1--flash--lite--image-orange.svg)](#)
+[![Default model: gemini-nano-banana-2.1](https://img.shields.io/badge/Default%20model-gemini--nano--banana--2.1-orange.svg)](#-models)
 [![API: Interactions API](https://img.shields.io/badge/API-Interactions%20API-blue.svg)](GEMINI.md)
-[![Protocol: FastMCP](https://img.shields.io/badge/Protocol-FastMCP-green.svg)](#)
+[![Protocol: MCP](https://img.shields.io/badge/Protocol-MCP-green.svg)](#-mcp-server-integration)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-lightgrey.svg)](LICENSE)
 
-This repository contains a high-performance Model Context Protocol (MCP) server for interacting with **gemini-3.1-flash-lite-image**, Google's high-efficiency Gemini Image model designed for exceptional speed, low latency, and high-fidelity image generation and editing.
+A Model Context Protocol (MCP) server and Claude Code skill for Google's Gemini
+image models, driven through the stateful **Interactions API**.
 
-Unlike traditional stateless image models, `gemini-3.1-flash-lite-image` supports the stateful **Interactions API**, allowing AI agents and developers to iteratively edit, refine, and transform images using natural language within a single context session.
+Unlike stateless image models, the Interactions API persists each turn's visual
+context server-side and returns an `interaction_id`. Passing that ID back as
+`previous_interaction_id` lets the model edit the existing canvas while
+preserving character, style, lighting, and pixel continuity — no re-prompting
+the whole scene.
+
+> This is a fork of [xbill9/nb2lite-skill-claude](https://github.com/xbill9/nb2lite-skill-claude),
+> modernized: current model lineup, Docker-first install, pinned dependencies,
+> real MCP errors, retries, and CI. See [MODERNIZATION.md](MODERNIZATION.md) for
+> the full rationale.
 
 ---
 
 ## ✨ Features
 
-- ⚡ **Low Latency & High Scale**: Under 2-second generation times, offering exceptional quality with blazing-fast speeds.
-- 🔄 **Stateful Multi-Turn Edits**: Maintain pixel and contextual continuity across multiple edits using interaction IDs.
-- 🎨 **Inline Local Image Modding**: Upload existing images in-line via Base64 and describe your edits directly.
-- 🧠 **Thinking Budgets**: Adjust latency vs. quality with configurable reasoning steps (`low`, `high`).
-- ✍️ **Enhanced Text & i18n**: Advanced text rendering in English and 25+ other languages.
-- 📂 **Concurrent File Management**: Thread-safe image saving with UUID-appended unique file naming and custom output folders.
+- 🎨 **Generate & edit** — text-to-image, stateful multi-turn edits by interaction ID, and inline editing of local files.
+- 🔄 **Stateful continuity** — chain interaction IDs to keep character, style, and composition stable across edits.
+- 🧠 **Per-model capabilities** — aspect ratio, `image_size`, and `thinking_level` are validated against what each model actually supports, and unknown (future) models pass straight through to the API rather than being rejected by a stale allowlist.
+- 🐳 **Docker-first** — the plugin launches a pinned container; nothing to install on the host but Docker.
+- 🔐 **Keys by reference** — the API key is never written into a manifest or into git.
+- ⚠️ **Real MCP errors** — failures raise protocol errors instead of returning success-shaped text an agent might mistake for a result.
 
 ---
 
-## ⚙️ Environment Configuration
+## 🧩 Models
 
-The MCP server checks the following environment variables on startup and execution:
+Set with `GEMINI_MODEL_NAME`. Default: **`gemini-nano-banana-2.1`**.
 
-| Variable | Type | Description | Default |
+| Model | Product | `image_size` | `thinking_level` |
 | :--- | :--- | :--- | :--- |
-| `GEMINI_API_KEY` | `str` | Primary API Key used to authenticate with the Gemini API. | *Required (or fallback)* |
-| `GOOGLE_API_KEY` | `str` | Fallback API Key used if `GEMINI_API_KEY` is not defined. | *Optional* |
-| `GEMINI_MODEL_NAME` | `str` | Overrides the default model used for interactions. | `"gemini-3.1-flash-lite-image"` |
-| `IMAGE_OUTPUT_DIR` | `str` | Sets the local directory where generated/edited images are stored. | `"."` (current directory) |
+| `gemini-nano-banana-2.1` *(default)* | Nano Banana 2.1 | 1K, 2K, 4K | minimal, low, medium, high |
+| `gemini-3.1-flash-image` | Nano Banana 2 | 1K, 2K | minimal, low, medium, high |
+| `gemini-3-pro-image` | Nano Banana Pro | 1K, 2K, 4K | low, medium, high |
+| `gemini-3.1-flash-lite-image` | Nano Banana 2 Lite | 1K only | low, high |
 
----
-
-## 🚀 Getting Started
-
-### 1. Prerequisites
-
-Ensure you have Python 3.10+ installed, then clone the repo and install the required dependencies using the [Makefile](Makefile) or pip:
-
-```bash
-git clone https://github.com/xbill9/nb2lite-skill-claude.git
-cd nb2lite-skill-claude
-make install
-# or
-pip install -r requirements.txt
-```
-
-### 2. Configure Environment
-
-You can configure your credentials interactively or reuse an existing key file using the helper script:
-
-```bash
-# Set up environment and export credentials
-source set_env.sh
-```
+**Aspect ratios** (all models): `1:1`, `3:2`, `2:3`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9`.
 
 > [!NOTE]
-> The `set_env.sh` script automatically reads your key from `~/gemini.key` if it exists. If not, it prompts you for the key, stores it securely in `~/gemini.key` for persistence across sessions, and exports both `GEMINI_API_KEY` and `GOOGLE_API_KEY` (fallback).
+> `gemini-nano-banana-2.1` and `gemini-3.1-flash-lite-image` are flagged by
+> Google as **short-term availability** — they may be shut down sooner than
+> standard stable models. `gemini-3.1-flash-image` and `gemini-3-pro-image`
+> carry shutdown dates no earlier than 2027-05-28. A weekly
+> [model-drift workflow](.github/workflows/model-drift.yml) opens an issue if
+> the configured default disappears.
 
-### 3. One-Command Bootstrap (Claude Code)
-
-To use the agent from Claude Code in this repo, `./init.sh` does the full local setup in one pass — installs the Python dependencies, registers the `nb2lite-agent` MCP server in this repo's `.mcp.json` (pointing at the repo-root [server.py](server.py)), and runs `set_env.sh` for the API key:
-
-```bash
-./init.sh        # or: source init.sh   (also exports the key into your shell)
-```
-
-Then restart Claude Code in the repo and approve the server; `/mcp` should list `nb2lite-agent`.
+`image_size` values are case-sensitive — the API rejects lowercase `1k`.
 
 ---
 
-## 🤖 MCP Server Integration
+## ⚙️ Environment configuration
 
-The FastMCP server defined in [server.py](server.py) exposes the full capabilities of `gemini-3.1-flash-lite-image` directly to your AI agents or assistants as tools.
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | API key for the Gemini Developer API. | *required* |
+| `GOOGLE_API_KEY` | Fallback if `GEMINI_API_KEY` is unset. | *optional* |
+| `GEMINI_MODEL_NAME` | Model to use (see table above). | `gemini-nano-banana-2.1` |
+| `IMAGE_OUTPUT_DIR` | Where images are written. | `.` |
+| `HOST_OUTPUT_DIR` | **Display only.** The host path that `IMAGE_OUTPUT_DIR` is mounted from, so reported paths are ones you can actually open. See [Docker](#-docker). | *unset* |
+| `GEMINI_TIMEOUT_SECONDS` | Per-request timeout. | `120` |
+| `GEMINI_RETRY_ATTEMPTS` | Retries on 429/5xx, with exponential backoff. | `3` |
+| `MAX_INPUT_IMAGE_MB` | Rejects oversized local inputs before reading them into memory. | `20` |
+| `GOOGLE_GENAI_USE_ENTERPRISE` | Opt in to ADC/enterprise auth instead of an API key. See [Authentication](#-authentication). | *unset* |
+| `GOOGLE_CLOUD_PROJECT` | Project ID — required when the above is set. | — |
+| `GOOGLE_CLOUD_LOCATION` | Location for the enterprise path. | `global` |
 
-### Run the Server
+---
 
-You can run the server locally or in development mode using:
+## 🚀 Install
+
+### Plugin + Docker (recommended)
+
+This is the primary path. It installs the **skill** (so the agent knows how to
+chain interaction IDs and when not to change aspect ratio) **and** registers the
+MCP server, which runs as a container.
 
 ```bash
-make run
-# or run with MCP dev tools
-mcp dev server.py
+docker pull tkhduracell/nb2lite-agent:0.2.0
+export GEMINI_API_KEY="$(cat ~/gemini.key)"   # or however you store it
 ```
 
-### 🛠️ Exposed Tools
+Then in Claude Code:
 
-#### 1. `generate_image`
-Generates a 1k resolution image from a text prompt and saves it locally.
+```
+/plugin marketplace add tkhduracell/nb2lite-skill-claude
+/plugin install nb2lite-image@nb2lite-skill-claude
+```
 
-* **Arguments**:
-  - `prompt` (`str`): The natural language description of the image.
-  - `aspect_ratio` (`str`): Supported: `1:1`, `16:9`, `9:16`, `4:3`, `3:4` (Default: `"1:1"`).
-  - `thinking_level` (`str`): Configurable thinking budget: `low`, `high` (Default: `"low"`).
-* **Usage Example**:
-  ```python
-  # Tool Call
-  generate_image(prompt="A futuristic cyberpunk kitchen cooking noodles", aspect_ratio="16:9", thinking_level="high")
-  ```
+The plugin manifest passes `-e GEMINI_API_KEY` **by name, with no value**, so
+Docker inherits it from the environment and the key never lands in the manifest
+or in git. Images are written to `./images` in the project.
 
-#### 2. `edit_image`
-Iteratively refines or modifies an existing image while preserving pixel and contextual continuity.
+### Fallback: pip + `claude mcp add`
 
-* **Arguments**:
-  - `previous_interaction_id` (`str`): The unique ID returned from the previous generation or edit.
-  - `edit_prompt` (`str`): Natural language description of what to change or add in the image.
-  - `thinking_level` (`str`): Configurable thinking budget: `low`, `high` (Default: `"low"`).
-* **Usage Example**:
-  ```python
-  # Tool Call
-  edit_image(previous_interaction_id="int_abc123xyz", edit_prompt="add a neon green glowing sign saying 'RAMEN' on the wall", thinking_level="high")
-  ```
+For a server-only install with no Docker. Note this does *not* install the
+skill — only the four tools.
 
-#### 3. `edit_local_image`
-Uploads a local image file in-line via Base64 and applies edits described in natural language.
+```bash
+git clone https://github.com/tkhduracell/nb2lite-skill-claude.git
+cd nb2lite-skill-claude
+pip install -r requirements.txt
 
-* **Arguments**:
-  - `image_path` (`str`): Absolute or relative path to the local image file.
-  - `edit_prompt` (`str`): Natural language description of how to edit or modify the image.
-  - `aspect_ratio` (`str`): Supported: `1:1`, `16:9`, `9:16`, `4:3`, `3:4` (Default: `"1:1"`).
-  - `thinking_level` (`str`): Configurable thinking budget: `low`, `high` (Default: `"low"`).
-* **Usage Example**:
-  ```python
-  # Tool Call
-  edit_local_image(image_path="./my_sketch.png", edit_prompt="Render this hand-drawn sketch as a high-fidelity 3D model", aspect_ratio="4:3")
-  ```
+claude mcp add nb2lite-agent \
+  --env GEMINI_API_KEY="$(cat ~/gemini.key)" \
+  --env GEMINI_MODEL_NAME=gemini-nano-banana-2.1 \
+  --env IMAGE_OUTPUT_DIR=./images \
+  -- python3 "$PWD/server.py"
+```
 
-#### 4. `get_help`
-Reports the server's live configuration (API key status, active model, absolute output directory) and a full reference of every exposed tool. Takes no arguments — call it first when diagnosing setup issues.
+Requires Python 3.10+. Restart Claude Code and approve the server; `/mcp` should
+list `nb2lite-agent`.
+
+---
+
+## 🔐 Authentication
+
+**Default — API key.** Set `GEMINI_API_KEY`. This is the supported and tested
+path.
+
+**Optional — Application Default Credentials.** The Interactions API also has an
+enterprise path that uses ADC instead of a key. Note it is `enterprise=True`,
+*not* the `vertexai=True` flag you might expect:
+
+```bash
+gcloud auth application-default login
+export GOOGLE_GENAI_USE_ENTERPRISE=1
+export GOOGLE_CLOUD_PROJECT=your-project-id
+export GOOGLE_CLOUD_LOCATION=global
+```
+
+Needs `roles/aiplatform.user`, plus the Agent Platform API and billing enabled
+on the project.
+
+> [!WARNING]
+> **Image output over the enterprise path is unverified.** Google's enterprise
+> developer guide documents `response_format` only for JSON schemas and does not
+> confirm that `{"type": "image"}` works there. The code supports it behind the
+> env flag, but it has not been confirmed to return images. Use the API key path
+> unless you have tested otherwise.
 
 ---
 
 ## 🐳 Docker
 
-The MCP server is published to Docker Hub as
-[`xbill9/nb2lite-agent`](https://hub.docker.com/r/xbill9/nb2lite-agent)
-(tags: `latest`, `0.1.1`; `linux/amd64`). The image contains **only** the
-FastMCP server and its open-source dependencies — no Claude Code, no API keys —
-so nothing needs to be installed on the host except Docker itself.
+Published as `tkhduracell/nb2lite-agent`. The image contains only `server.py`
+and its pinned dependencies — no keys, no Claude Code. `.dockerignore` is
+deny-all-then-allow, so `.env`, `.mcp.json`, and key files cannot enter the
+build context.
 
-> [!NOTE]
-> This is a third-party community project, not affiliated with or endorsed by
-> Anthropic or Google. You supply your own Gemini API key.
-
-### Quick sanity check
+It runs as **uid 1000**, not root, so images written through a bind mount are
+not root-owned on the host.
 
 ```bash
-docker pull xbill9/nb2lite-agent
-docker run --rm -i -e GEMINI_API_KEY=dummy xbill9/nb2lite-agent
-# The server is now waiting for MCP JSON-RPC on stdin (Ctrl-C to exit).
+docker run --rm -i \
+  -e GEMINI_API_KEY \
+  -e GEMINI_MODEL_NAME \
+  -e HOST_OUTPUT_DIR="$PWD/images" \
+  -v "$PWD/images:/images" \
+  tkhduracell/nb2lite-agent:0.2.0
 ```
 
-### Use it from Claude Code
+### The output-path gotcha
 
-The server saves images to disk and reads local files for `edit_local_image`,
-so the container must see your project directory **at the same absolute path**
-as the host — otherwise the tools report container paths that don't exist on
-your machine. Mount it with `-v "$PWD:$PWD" -w "$PWD"`:
+Inside the container, a saved image is at `/images/gen_….png` — a path the host
+cannot open. Set `HOST_OUTPUT_DIR` to the host side of the mount and the server
+reports the host-visible path instead. It affects reporting only; the write
+still goes to `IMAGE_OUTPUT_DIR`.
+
+### Building
 
 ```bash
-claude mcp add nb2lite-agent --env GEMINI_API_KEY="$(cat ~/gemini.key)" -- \
-  docker run --rm -i -e GEMINI_API_KEY -v "$PWD:$PWD" -w "$PWD" xbill9/nb2lite-agent
+make docker-build    # local, single-arch
+make docker-buildx   # multi-arch build, no push
+make docker-push     # multi-arch build + push (needs docker login)
 ```
-
-Or hand-write the equivalent `.mcp.json` entry (replace `/abs/path/to/project`):
-
-```json
-{
-  "mcpServers": {
-    "nb2lite-agent": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-e", "GEMINI_API_KEY",
-        "-v", "/abs/path/to/project:/abs/path/to/project",
-        "-w", "/abs/path/to/project",
-        "xbill9/nb2lite-agent"
-      ],
-      "env": { "GEMINI_API_KEY": "your-key-here" }
-    }
-  }
-}
-```
-
-The bare `-e GEMINI_API_KEY` (no value) forwards the variable from the `env`
-block into the container without ever putting the key in the argument list.
-Add `-e GEMINI_MODEL_NAME` / `-e IMAGE_OUTPUT_DIR` the same way to override
-the model or redirect saved images (the path must be under the mount).
-Restart Claude Code and approve the server; `/mcp` should list `nb2lite-agent`.
-
-### Build and publish (maintainers)
-
-```bash
-make docker-build   # xbill9/nb2lite-agent:0.1.1 + :latest from server.py + requirements.txt
-make docker-push    # build + push both tags (requires docker login)
-```
-
-`.dockerignore` whitelists only `server.py` and `requirements.txt`, so
-key-carrying files (`.env`, `.mcp.json`) can never enter the build context.
-The published image is currently `linux/amd64`; on an arm64 host (Apple
-Silicon) Docker runs it under emulation, or build natively with
-`docker build -t nb2lite-agent .` from a checkout.
 
 ---
 
-## 🛠️ Development & Commands
+## 🤖 MCP server integration
 
-Use the [Makefile](Makefile) to streamline common workflows:
+### Exposed tools
 
-| Command | Description |
+#### `generate_image`
+Text → image. Saves locally and returns the saved path plus an interaction ID.
+
+| Argument | Type | Notes |
+| :--- | :--- | :--- |
+| `prompt` | `str` | **Required.** Description of the image. |
+| `aspect_ratio` | `str` | Default `1:1`. See the ratio list above. |
+| `thinking_level` | `str` | Model-dependent; see the model table. |
+| `image_size` | `str` | `1K`/`2K`/`4K`, model-dependent. Uppercase K required. |
+| `mime_type` | `str` | `image/png` or `image/jpeg`. |
+| `store` | `bool` | Default `True`. `False` means the result cannot be edited statefully later. |
+
+#### `edit_image`
+Stateful edit of a previous turn, preserving continuity.
+
+| Argument | Type | Notes |
+| :--- | :--- | :--- |
+| `previous_interaction_id` | `str` | **Required.** Chain the **most recent** ID — a stale one silently forks from an older state. |
+| `edit_prompt` | `str` | **Required.** Describe only the change. |
+| `thinking_level` | `str` | Model-dependent. |
+| `image_size` | `str` | Model-dependent. |
+
+Takes no `aspect_ratio` — stateful edits inherit the previous turn's ratio.
+
+#### `edit_local_image`
+Uploads a local file inline as base64 and applies an edit. Same optional
+arguments as `generate_image`, plus `image_path`. Inputs over
+`MAX_INPUT_IMAGE_MB` are rejected before being read into memory.
+
+#### `get_help`
+Reports live configuration — auth mode, active model, output directory,
+`HOST_OUTPUT_DIR` — and a full tool reference. Takes no arguments; call it first
+when diagnosing setup.
+
+### Output files
+
+`<prefix>_<unix-ts>_<uuid8>.<ext>` (`gen_`, `edit_`, `edit_local_`) under
+`IMAGE_OUTPUT_DIR`. The UUID suffix keeps concurrent writes collision-free. The
+extension follows the returned mime type, defaulting to `.png`.
+
+### Errors
+
+Tools raise MCP `ToolError`, so failures arrive as protocol errors rather than
+as text that looks like a successful result.
+
+---
+
+## 🧰 Development
+
+```bash
+make install   # pip install -r requirements.txt
+make run       # python server.py
+make test      # 54-test unittest suite, fully mocked (no network, no key)
+make lint      # ruff check + ruff format --check
+make validate  # claude plugin validate .
+make clean
+```
+
+### Dependency pins
+
+```
+google-genai>=2.33.0,<3   # interaction.output_image needs >= 2.3.0
+mcp>=2.3.0,<3
+```
+
+Dependabot watches pip, GitHub Actions, and the Docker base image weekly.
+
+### Repository layout
+
+| Path | Role |
 | :--- | :--- |
-| `make install` | Installs Python requirements. |
-| `make run` | Starts the FastMCP server. |
-| `make test` | Runs the full suite of agent integration tests. |
-| `make lint` | Style and formatting checks (`ruff`) plus `bash -n` on the shell scripts. |
-| `make clean` | Cleans up local Python cache files. |
-| `make skill` | Refreshes all skill snapshots (`mcp/`, `.claude/skills/`, plugin copy in `skills/`) from the root sources. |
-| `make skill-install` | Refreshes + copies the skill to `~/.claude/skills` (all projects). |
-| `make skill-package` | Refreshes + rebuilds `dist/nb2lite-image-skill.zip`. |
-| `make init` | Refreshes + installs the Claude skill into a target project and registers the MCP server (`TARGET=/path ARGS='...'`). |
-| `make docker-build` | Builds the `xbill9/nb2lite-agent` Docker image (version + `latest` tags). |
-| `make docker-push` | Builds + pushes both image tags to Docker Hub. |
-
----
-
-## 🧩 Claude Skill
-
-This repository is also packaged as a Claude Code skill named **`nb2lite-image`**:
-
-- [SKILL.md](SKILL.md) — the skill manifest: workflow, MCP tool catalog, parameter constraints, and best practices.
-- `mcp/` — the bundled FastMCP server snapshot, its requirements, and `project-setup.sh` (the one-command installer).
-- `references/` — the Interactions API developer guide bundled with the skill.
-
-Install into a project (copies the skill into `<project>/.claude/skills/nb2lite-image/` and registers the `nb2lite-agent` server in the project's `.mcp.json`):
-
-```bash
-make init TARGET=/path/to/project           # one project
-make init ARGS='--global'                   # all projects (user scope)
-mcp/project-setup.sh --help                 # all options
-```
-
-The installer reuses `~/gemini.key` (written by `set_env.sh`) when present. Restart Claude Code in the target project afterwards; `/mcp` should list `nb2lite-agent`.
+| `server.py` | The MCP server — the single authoritative copy. |
+| `test_agent.py` | Mocked unit tests. |
+| `skills/nb2lite-image/` | The skill (plugin layout). `SKILL.md` and `references/` at the repo root are symlinks to it. |
+| `.claude/skills/nb2lite-image` | Symlink, so the skill is active when working in this repo. |
+| `.claude-plugin/` | Plugin + marketplace manifests. |
+| `references/gemini-interactions-api.md` | Vendored Interactions API guide (provenance in `skills-lock.json`). |
+| `GEMINI.md` | Full Interactions API developer guide. |
 
 > [!NOTE]
-> `mcp/server.py` is a snapshot of the repo-root [server.py](server.py); the root copy is authoritative if the two differ. Run `make skill` after editing the sources to refresh every snapshot (`mcp/`, `.claude/skills/nb2lite-image/`, and the plugin copy in `skills/`) — never edit a snapshot directly.
+> Earlier versions kept four synced copies of `server.py` plus a
+> `refresh_skill.py` sync tool and several bootstrap scripts
+> (`init.sh`, `set_env.sh`, `project-setup.sh`). All removed — the plugin
+> manifest launches Docker, so the skill no longer bundles the server.
 
-### Plugin marketplace
+### CI
 
-The repo is also packaged as a Claude Code plugin (`.claude-plugin/plugin.json` + `marketplace.json`), which installs the skill **and** auto-registers the `nb2lite-agent` MCP server:
+| Workflow | Trigger |
+| :--- | :--- |
+| `ci.yml` | Push/PR — lint, tests on Python 3.10–3.13, manifest validation. |
+| `docker.yml` | PR builds amd64; a `v*` tag builds multi-arch and pushes. |
+| `model-drift.yml` | Weekly — flags a vanished default model. |
 
-```
-/plugin marketplace add xbill9/nb2lite-skill-claude
-/plugin install nb2lite-image@nb2lite-skill-claude
-```
-
-The plugin manifest carries no API key — the server reads `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) from the environment, so run `source set_env.sh` first. Validate manifest changes with `claude plugin validate .`; a standalone zip of the skill is kept at `dist/nb2lite-image-skill.zip` (rebuild with `make skill-package`).
+Secret-dependent jobs skip cleanly on a fork with no secrets, and never run on
+fork PRs.
 
 ---
 
 ## 📚 Documentation
 
-- [GEMINI.md](GEMINI.md) - Complete Interactions API developer guide, Python SDK walkthrough, and raw API specifications.
-- [SKILL.md](SKILL.md) - Claude skill manifest for the `nb2lite-image` skill.
-- [CLAUDE.md](CLAUDE.md) - Contributor guide for Claude Code: repository layout, the snapshot sync model, and coding standards.
-- [references/gemini-interactions-api.md](references/gemini-interactions-api.md) - The Interactions API guide bundled with the skill (vendored; tracked in [skills-lock.json](skills-lock.json)).
-- [devto-article.md](devto-article.md) - dev.to post covering the repo (background, Interactions API, MCP, skill install, examples); the cover image ([devto-cover.jpg](devto-cover.jpg)) was generated with this repo's own `generate_image` tool.
-- [LICENSE](LICENSE) - Apache-2.0.
+- [SKILL.md](SKILL.md) — the skill: workflow, tool catalog, best practices
+- [GEMINI.md](GEMINI.md) — Interactions API developer guide
+- [MODERNIZATION.md](MODERNIZATION.md) — what changed in this fork and why
+- [CLAUDE.md](CLAUDE.md) — guidance for Claude Code working in this repo
+- [Interactions API reference](https://ai.google.dev/api/interactions-api) · [image generation](https://ai.google.dev/gemini-api/docs/interactions/image-generation)
+
+## 📄 License
+
+Apache-2.0 — see [LICENSE](LICENSE). Forked from
+[xbill9/nb2lite-skill-claude](https://github.com/xbill9/nb2lite-skill-claude);
+upstream copyright retained.

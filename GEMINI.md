@@ -40,10 +40,10 @@ Gemini 3.1 Flash Lite Image (`gemini-3.1-flash-lite-image`) is a high-efficiency
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| **`model`** | `str` | Must be set to `"gemini-3.1-flash-lite-image"`. |
+| **`model`** | `str` | Any supported image model — see the model table below. |
 | **`input`** | `str` \| `list` | Text description or a list containing base64 images and text prompts. |
-| **`response_format`** | `dict` | e.g. `{"type": "image"}`. Supports `"aspect_ratio"` (e.g. `"1:1"`, `"16:9"`, `"9:16"`). |
-| **`generation_config`**| `dict` | Configuration for `thinking_level`. The spec lists `'minimal'`, `'low'`, `'medium'`, and `'high'`, but `gemini-3.1-flash-lite-image` accepts only `'low'` and `'high'` (others return HTTP 400). |
+| **`response_format`** | `dict` | e.g. `{"type": "image"}`. Supports `"aspect_ratio"`, `"image_size"` (`1K`/`2K`/`4K`, uppercase K required), and `"mime_type"` (`image/png`, `image/jpeg`). |
+| **`generation_config`**| `dict` | Configuration for `thinking_level`. Valid values are `'minimal'`, `'low'`, `'medium'`, `'high'`, but **which are accepted varies by model** — see the table below. |
 | **`previous_interaction_id`** | `str` | Performs stateful image editing/refinement on a prior turn's image. |
 | **`store`** | `bool` | Set to `True` to allow subsequent stateful edits on the image. |
 
@@ -95,7 +95,18 @@ local_edit = client.interactions.create(
 The tools in this repository wrap the raw Python SDK calls with robustness features designed for direct tool-use by LLM agents:
 
 ### 1. Model Selection
-Our server abstracts model naming using the `GEMINI_MODEL_NAME` environment variable (defaulting to `"gemini-3.1-flash-lite-image"`). This allows easy hot-swapping or testing newer model revisions without code changes.
+Our server abstracts model naming using the `GEMINI_MODEL_NAME` environment variable (defaulting to `"gemini-nano-banana-2.1"`). This allows easy hot-swapping or testing newer model revisions without code changes.
+
+| Model | `image_size` | `thinking_level` |
+| :--- | :--- | :--- |
+| `gemini-nano-banana-2.1` *(default)* | 1K, 2K, 4K | minimal, low, medium, high |
+| `gemini-3.1-flash-image` | 1K, 2K | minimal, low, medium, high |
+| `gemini-3-pro-image` | 1K, 2K, 4K | low, medium, high |
+| `gemini-3.1-flash-lite-image` | 1K only | low, high |
+
+Aspect ratios (all models): `1:1`, `3:2`, `2:3`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9`.
+
+A model **not** in this table is not validated locally — the request is passed through and the API's response is authoritative.
 
 ### 2. File Persistence & Security
 All response images are received as base64-encoded or raw byte data. The server automatically detects the returned mime-type (PNG, JPEG, WebP) and handles the physical file write to a directory specified by the developer via `IMAGE_OUTPUT_DIR`.
@@ -117,13 +128,14 @@ The server exposes a `get_help` tool that reports its live configuration — API
 * **Keep Edit Prompts Incremental**: Instead of repeating the entire original description in your edit prompt, focus only on the incremental changes (e.g. use `"make the sky dark blue with lightning"` rather than repeating `"a landscape under a dark blue sky with lightning"`).
 * **Align Aspect Ratios**: During stateful refinement turns, avoid changing the aspect ratio, as changing ratios between turns can degrade pixel continuity.
 * **Optimize Thinking Budgets**:
-  * Use `'low'` for ultra-fast previews and prototyping.
+  * Use lower levels for ultra-fast previews and prototyping.
   * Use `'high'` when you need complex rendering, text layout accuracy, or advanced character composition.
-  * The spec's `'minimal'` and `'medium'` levels are rejected by the live API for this model.
+  * Which levels a model accepts varies — `gemini-3.1-flash-lite-image` rejects `'minimal'`/`'medium'` with HTTP 400, while `gemini-nano-banana-2.1` accepts all four.
 
 ---
 
 ## 🔗 Useful Links
 - [Interactions API Reference Guide](https://ai.google.dev/api/interactions-api)
 - [Raw Interactions API Details](https://ai.google.dev/api/interactions.md.txt)
-- [Project repository](https://github.com/xbill9/nb2lite-skill-claude) — the `nb2lite-agent` MCP server ([server.py](server.py)), the `nb2lite-image` Claude Code skill ([SKILL.md](SKILL.md)), and setup docs ([README.md](README.md))
+- [Image generation guide](https://ai.google.dev/gemini-api/docs/interactions/image-generation) — `response_format`, sizes, aspect ratios
+- [Project repository](https://github.com/tkhduracell/nb2lite-skill-claude) — the `nb2lite-agent` MCP server ([server.py](server.py)), the `nb2lite-image` Claude Code skill ([SKILL.md](SKILL.md)), and setup docs ([README.md](README.md))

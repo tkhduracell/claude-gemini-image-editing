@@ -1,2 +1,6 @@
-google-genai
-mcp
+# interaction.output_image, which server.py relies on, needs google-genai >= 2.3.0.
+google-genai>=2.33.0,<3
+# mcp 2.x only: server.py imports MCPServer from mcp.server.mcpserver, which
+# replaced the FastMCP class and the mcp.server.fastmcp package removed in 2.0.
+# It will not import on mcp 1.x.
+mcp>=2.3.0,<3

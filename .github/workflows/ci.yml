@@ -1,0 +1,303 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install ruff
+        run: python -m pip install --upgrade pip ruff
+
+      - name: ruff check
+        run: ruff check server.py test_agent.py
+
+      - name: ruff format --check
+        run: ruff format --check server.py test_agent.py
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the floor: both pinned deps (mcp>=2.3.0, google-genai>=2.33.0)
+        # declare Requires-Python >=3.10 on PyPI. 3.13 is the primary target.
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        # test_agent.py is a stdlib unittest suite and fully mocked:
+        # no network and no GEMINI_API_KEY required.
+        run: python test_agent.py
+
+  plugin-validate:
+    name: Validate plugin manifests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Structural validation of .claude-plugin manifests
+        # `claude plugin validate .` needs the Claude Code CLI, which is not
+        # available on a stock GitHub runner (and would need credentials), so
+        # this is a self-contained structural check instead. Stdlib only.
+        shell: python
+        run: |
+          import json
+          import pathlib
+          import re
+          import sys
+
+          errors = []
+
+          def load(path):
+              p = pathlib.Path(path)
+              if not p.is_file():
+                  errors.append(f"{path}: missing")
+                  return None
+              try:
+                  return json.loads(p.read_text(encoding="utf-8"))
+              except json.JSONDecodeError as exc:
+                  errors.append(f"{path}: invalid JSON: {exc}")
+                  return None
+
+          def require(path, obj, key, types):
+              if not isinstance(obj, dict):
+                  errors.append(f"{path}: top level must be a JSON object")
+                  return None
+              if key not in obj:
+                  errors.append(f"{path}: missing required key '{key}'")
+                  return None
+              value = obj[key]
+              if not isinstance(value, types):
+                  names = types if isinstance(types, tuple) else (types,)
+                  want = " or ".join(t.__name__ for t in names)
+                  errors.append(f"{path}: '{key}' must be {want}, got {type(value).__name__}")
+                  return None
+              return value
+
+          plugin_path = ".claude-plugin/plugin.json"
+          market_path = ".claude-plugin/marketplace.json"
+          plugin = load(plugin_path)
+          market = load(market_path)
+
+          plugin_version = None
+          if plugin is not None:
+              require(plugin_path, plugin, "name", str)
+              plugin_version = require(plugin_path, plugin, "version", str)
+              servers = require(plugin_path, plugin, "mcpServers", dict)
+              if plugin_version and not re.fullmatch(r"\d+\.\d+\.\d+", plugin_version):
+                  errors.append(
+                      f"{plugin_path}: 'version' must be semver MAJOR.MINOR.PATCH, got {plugin_version!r}"
+                  )
+              if servers is not None:
+                  if not servers:
+                      errors.append(f"{plugin_path}: 'mcpServers' must not be empty")
+                  for name, spec in servers.items():
+                      if not isinstance(spec, dict):
+                          errors.append(f"{plugin_path}: mcpServers['{name}'] must be an object")
+                          continue
+                      if "command" not in spec and "url" not in spec:
+                          errors.append(
+                              f"{plugin_path}: mcpServers['{name}'] needs 'command' or 'url'"
+                          )
+                      if "args" in spec and not isinstance(spec["args"], list):
+                          errors.append(f"{plugin_path}: mcpServers['{name}'].args must be an array")
+
+          if market is not None:
+              require(market_path, market, "name", str)
+              owner = require(market_path, market, "owner", dict)
+              plugins = require(market_path, market, "plugins", list)
+              if owner is not None and "name" not in owner:
+                  errors.append(f"{market_path}: 'owner' needs a 'name'")
+              if plugins is not None:
+                  if not plugins:
+                      errors.append(f"{market_path}: 'plugins' must not be empty")
+                  for i, entry in enumerate(plugins):
+                      if not isinstance(entry, dict):
+                          errors.append(f"{market_path}: plugins[{i}] must be an object")
+                          continue
+                      for key in ("name", "source"):
+                          if key not in entry:
+                              errors.append(f"{market_path}: plugins[{i}] missing '{key}'")
+                  if plugin is not None and isinstance(plugin.get("name"), str):
+                      names = [e.get("name") for e in plugins if isinstance(e, dict)]
+                      if plugin["name"] not in names:
+                          errors.append(
+                              f"{market_path}: no plugins[] entry named {plugin['name']!r} "
+                              f"(from {plugin_path}); found {names}"
+                          )
+
+          # plugin.json version must track the Makefile VERSION (they are
+          # released together: the Docker tag and the plugin version).
+          makefile = pathlib.Path("Makefile")
+          if not makefile.is_file():
+              errors.append("Makefile: missing")
+          elif plugin_version:
+              match = re.search(
+                  r"^\s*VERSION\s*[:?]?=\s*(\S+)", makefile.read_text(encoding="utf-8"), re.M
+              )
+              if not match:
+                  errors.append("Makefile: no VERSION assignment found")
+              elif match.group(1) != plugin_version:
+                  errors.append(
+                      f"version mismatch: Makefile VERSION={match.group(1)} but "
+                      f"{plugin_path} version={plugin_version}"
+                  )
+
+          if errors:
+              print("Plugin manifest validation FAILED:", file=sys.stderr)
+              for e in errors:
+                  print(f"  - {e}", file=sys.stderr)
+              sys.exit(1)
+
+          print("Plugin manifest validation OK")
+          print(f"  plugin.json name={plugin['name']} version={plugin_version}")
+          print(f"  mcpServers: {', '.join(plugin['mcpServers'])}")
+          print(f"  marketplace.json plugins: {len(market['plugins'])}")
+
+  integration:
+    name: Integration (real API)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    permissions:
+      contents: read
+    # Two independent gates:
+    #  1. Never run for a pull_request coming from a fork — a fork PR must not
+    #     be able to read GEMINI_API_KEY. For push/schedule/dispatch events
+    #     `github.event.pull_request` is null, so the first clause passes and
+    #     the repository-owner clause still keeps forks of this repo out.
+    #  2. The secret must actually exist. When it does not, the `if` is false
+    #     and the job is SKIPPED (not failed), so a fresh fork with zero
+    #     secrets configured still gets a green CI run.
+    if: >-
+      github.repository == 'tkhduracell/nb2lite-skill-claude' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    steps:
+      - name: Check for GEMINI_API_KEY
+        id: secret
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        # Only the emptiness of the secret is reported, never its value.
+        run: |
+          if [ -n "${GEMINI_API_KEY}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GEMINI_API_KEY is not configured; skipping integration steps."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.present == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.secret.outputs.present == 'true'
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        if: steps.secret.outputs.present == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Smoke check — server imports and reports the key as set
+        if: steps.secret.outputs.present == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        # Imports the MCP server module (so a broken stdio server fails here)
+        # and asserts get_help() sees a configured key. Makes no API call and
+        # prints no secret — only get_help's own "Set"/"Not Set" status word.
+        shell: python
+        run: |
+          import importlib
+          import os
+          import re
+          import sys
+
+          # `shell: python` runs the script from a temp file, so the workspace
+          # is not on sys.path automatically.
+          sys.path.insert(0, os.getcwd())
+
+          server = importlib.import_module("server")
+
+          # FastMCP wraps tool functions; unwrap to call the plain function.
+          help_fn = getattr(server.get_help, "fn", server.get_help)
+          text = help_fn()
+
+          # Matches get_help's auth line without pinning its exact wording,
+          # e.g. "- *Current Auth:* API key: `Set`". Only the status word is
+          # read; the key value never appears in get_help's output.
+          auth_line = next(
+              (ln for ln in text.splitlines() if re.search(r"Current Auth|Current Status", ln)),
+              None,
+          )
+          if auth_line is None:
+              print("get_help() has no auth status line; update this smoke check", file=sys.stderr)
+              print(text, file=sys.stderr)
+              sys.exit(1)
+
+          print(f"auth line: {auth_line.strip()}")
+          if not re.search(r"`Set`", auth_line) or re.search(r"`Not Set`", auth_line):
+              print("get_help() does not report the API key as Set", file=sys.stderr)
+              sys.exit(1)
+
+          for tool in ("generate_image", "edit_image", "edit_local_image", "get_help"):
+              if not hasattr(server, tool):
+                  print(f"server.py is missing tool {tool}", file=sys.stderr)
+                  sys.exit(1)
+
+          print("Smoke check OK: server imports, 4 tools present, key reported as Set")
+
+      - name: PLACEHOLDER — real-API integration tests
+        if: steps.secret.outputs.present == 'true'
+        # PLACEHOLDER. There is deliberately no real-API test file in this repo
+        # yet, and this step asserts NOTHING about the Gemini API. It exists
+        # only as the documented hook for future integration tests: add e.g.
+        # test_integration.py (billable, hits interactions.create) and replace
+        # this step with `python test_integration.py`. Do not read a green run
+        # of this step as evidence that image generation works.
+        run: |
+          echo "::notice title=Placeholder::No real-API integration tests exist yet; nothing was verified against the Gemini API."

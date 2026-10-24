@@ -1,0 +1,205 @@
+name: Model drift check
+
+# The server's default image model, and the alternates it can be pointed at,
+# are flagged by Google as "short-term availability" models: they can be shut
+# down sooner than standard stable models. A silent disappearance would break
+# every user of this agent, so check weekly that the configured default is
+# still listed by the API and open an issue if it is not.
+
+on:
+  schedule:
+    # Mondays at 06:17 UTC (off the hour to avoid the cron stampede).
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  model-drift:
+    name: Check default model availability
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    # Same gating as the integration job: never expose GEMINI_API_KEY to a
+    # fork, and skip cleanly (not fail) when the secret is absent. schedule
+    # and workflow_dispatch never carry a pull_request payload.
+    if: >-
+      github.repository == 'tkhduracell/nb2lite-skill-claude' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    steps:
+      - name: Check for GEMINI_API_KEY
+        id: secret
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        # Reports only whether the secret is non-empty, never its value.
+        run: |
+          if [ -n "${GEMINI_API_KEY}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GEMINI_API_KEY is not configured; skipping the model drift check."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.present == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.secret.outputs.present == 'true'
+        with:
+          python-version: '3.13'
+
+      - name: Query ListModels and compare against the configured default
+        id: drift
+        if: steps.secret.outputs.present == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        # Stdlib only — no new repo dependency. The default model name is read
+        # out of server.py so this keeps working if the default is changed.
+        shell: python
+        run: |
+          import json
+          import os
+          import re
+          import pathlib
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          api_key = os.environ["GEMINI_API_KEY"]
+
+          source = pathlib.Path("server.py").read_text(encoding="utf-8")
+          match = re.search(
+              r"""GEMINI_MODEL_NAME["']\s*,\s*["']([^"']+)["']""", source
+          )
+          if not match:
+              print("Could not find the default model name in server.py", file=sys.stderr)
+              sys.exit(1)
+          default_model = match.group(1)
+          print(f"Configured default model: {default_model}")
+
+          # The key goes in a header, never in the URL/query string.
+          names = []
+          page_token = ""
+          for _ in range(20):
+              url = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200"
+              if page_token:
+                  url += f"&pageToken={urllib.parse.quote(page_token)}"
+              req = urllib.request.Request(
+                  url,
+                  headers={
+                      "x-goog-api-key": api_key,
+                      "Accept": "application/json",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as resp:
+                      payload = json.load(resp)
+              except urllib.error.HTTPError as exc:
+                  # Do not echo the response body: it can contain request
+                  # metadata. Status code is enough to triage.
+                  print(f"ListModels failed with HTTP {exc.code}", file=sys.stderr)
+                  sys.exit(1)
+              except urllib.error.URLError as exc:
+                  print(f"ListModels request failed: {exc.reason}", file=sys.stderr)
+                  sys.exit(1)
+
+              for model in payload.get("models", []):
+                  name = model.get("name", "")
+                  names.append(name.removeprefix("models/"))
+
+              page_token = payload.get("nextPageToken") or ""
+              if not page_token:
+                  break
+
+          print(f"ListModels returned {len(names)} models")
+
+          available = default_model in names
+          print(f"Default model still listed: {available}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"model={default_model}\n")
+              fh.write(f"available={'true' if available else 'false'}\n")
+
+          if not available:
+              suggestions = sorted(n for n in names if "image" in n)
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+                  fh.write(f"## Model drift detected\n\n`{default_model}` is no longer listed.\n\n")
+                  if suggestions:
+                      fh.write("Image-capable models currently listed:\n\n")
+                      for name in suggestions:
+                          fh.write(f"- `{name}`\n")
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
+                  fh.write("DRIFT_SUGGESTIONS<<EOF_SUGGESTIONS\n")
+                  fh.write("\n".join(f"- `{n}`" for n in suggestions) or "- (none found)")
+                  fh.write("\nEOF_SUGGESTIONS\n")
+
+      - name: Open or update a tracking issue
+        if: steps.secret.outputs.present == 'true' && steps.drift.outputs.available == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODEL: ${{ steps.drift.outputs.model }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # Deduplication: one open issue carries the `model-drift` label. If it
+        # already exists, comment on it instead of filing a new one every week.
+        run: |
+          set -euo pipefail
+
+          LABEL="model-drift"
+          TITLE="Model drift: default model \`${MODEL}\` is no longer listed by the Gemini API"
+
+          # Create the label if the repo does not have it yet (ignore "exists").
+          gh label create "$LABEL" \
+            --repo "$REPO" \
+            --color B60205 \
+            --description "Configured Gemini model may have been retired" \
+            >/dev/null 2>&1 || true
+
+          EXISTING=$(gh issue list \
+            --repo "$REPO" \
+            --state open \
+            --label "$LABEL" \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Open issue #${EXISTING} already tracks this; adding a comment."
+            gh issue comment "$EXISTING" --repo "$REPO" --body \
+              "Still drifted as of this run: \`${MODEL}\` was not in the ListModels response. ${RUN_URL}"
+            exit 0
+          fi
+
+          {
+            echo "The weekly model drift check could not find the server's configured default model"
+            echo "in the Gemini \`ListModels\` response."
+            echo
+            echo "- **Configured default:** \`${MODEL}\` (from \`GEMINI_MODEL_NAME\` in \`server.py\`)"
+            echo "- **Workflow run:** ${RUN_URL}"
+            echo
+            echo "This model is on Google's *short-term availability* track, so retirement is expected"
+            echo "eventually. Image generation will fail for every user on the default until the"
+            echo "default is repointed."
+            echo
+            echo "### Image-capable models currently listed"
+            echo
+            echo "${DRIFT_SUGGESTIONS:-- (none captured)}"
+            echo
+            echo "### Suggested fix"
+            echo
+            echo "1. Pick a replacement from the list above."
+            echo "2. Update the \`GEMINI_MODEL_NAME\` default in \`server.py\`, then run \`make skill\`."
+            echo "3. Update the model references in \`README.md\`, \`SKILL.md\`, \`CLAUDE.md\` and \`.claude-plugin/plugin.json\`."
+            echo
+            echo "_Filed automatically by the \`model-drift\` workflow._"
+          } > /tmp/model-drift-body.md
+
+          gh issue create \
+            --repo "$REPO" \
+            --title "$TITLE" \
+            --label "$LABEL" \
+            --body-file /tmp/model-drift-body.md

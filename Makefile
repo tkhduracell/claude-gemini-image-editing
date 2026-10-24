@@ -1,35 +1,31 @@
-# NB2Lite agent — build, test, and skill-packaging targets
+# nb2lite-agent — build, test, and image-publishing targets.
 
-SKILL_NAME := nb2lite-image
-SKILL_DIR  := .claude/skills/$(SKILL_NAME)
-PLUGIN_DIR := skills/$(SKILL_NAME)
-DIST_DIR   := dist
-IMAGE      := xbill9/nb2lite-agent
-VERSION    := 0.1.1
+IMAGE   := tkhduracell/nb2lite-agent
+# Keep VERSION in sync with "version" in .claude-plugin/plugin.json and with the
+# image tag pinned in that file's mcpServers args.
+VERSION := 0.2.0
 
-.PHONY: all help install run test lint clean skill skill-install skill-package init docker-build docker-push
+.PHONY: all help install run test lint clean docker-build docker-buildx docker-push validate
 
 all: help
 
 help:
 	@echo "========================================================="
-	@echo " NB2Lite Agent - Makefile"
+	@echo " nb2lite-agent - Makefile"
 	@echo "========================================================="
 	@echo "Available commands:"
 	@echo "  make install       - Install Python requirements"
 	@echo "  make run           - Start the FastMCP server (server.py)"
-	@echo "  make test          - Run the agent integration tests"
-	@echo "  make lint          - ruff on the Python sources, bash -n on the shell scripts"
+	@echo "  make test          - Run the agent integration tests (needs a key)"
+	@echo "  make lint          - ruff check + ruff format --check on the sources"
 	@echo "  make clean         - Remove Python caches"
-	@echo "  make skill         - Refresh $(SKILL_NAME) skill snapshots from the root sources"
-	@echo "                       (mcp/ snapshot, $(SKILL_DIR), plugin copy in skills/)"
-	@echo "  make skill-install - Refresh + copy the skill to ~/.claude/skills (all projects)"
-	@echo "  make skill-package - Refresh + build $(DIST_DIR)/$(SKILL_NAME)-skill.zip"
-	@echo "  make init TARGET=/path/to/project [ARGS='--output-dir ./images']"
-	@echo "                     - Refresh + install skill AND register the nb2lite-agent MCP"
-	@echo "                       server in TARGET (or globally with ARGS='--global')"
-	@echo "  make docker-build  - Build the $(IMAGE) image ($(VERSION) + latest)"
-	@echo "  make docker-push   - Build + push both tags to Docker Hub"
+	@echo "  make docker-build  - Build $(IMAGE):$(VERSION) locally (host arch)"
+	@echo "  make docker-buildx - Multi-arch build (amd64+arm64), no push"
+	@echo "  make docker-push   - Multi-arch build + push $(VERSION) and latest"
+	@echo "                       (requires: docker login)"
+	@echo "  make validate      - Validate the .claude-plugin manifests"
+	@echo ""
+	@echo "VERSION = $(VERSION) (must match .claude-plugin/plugin.json)"
 	@echo "========================================================="
 
 install:
@@ -41,52 +37,34 @@ run:
 test:
 	python test_agent.py
 
-# Lint the repo-root sources (mcp/, .claude/skills/ and skills/ hold generated
-# copies — lint the sources, not the copies).
 lint:
 	@command -v ruff >/dev/null || { echo "ruff not found; install with: pip install ruff"; exit 1; }
-	ruff check server.py test_agent.py refresh_skill.py
-	ruff format --check server.py test_agent.py refresh_skill.py
-	@for s in project-setup.sh init.sh set_env.sh mcp/project-setup.sh; do bash -n $$s || exit 1; done
+	ruff check server.py test_agent.py
+	ruff format --check server.py test_agent.py
 	@echo "lint OK"
 
 clean:
 	rm -rf .ruff_cache .mypy_cache
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
-skill:
-	python3 refresh_skill.py
-	rm -rf $(PLUGIN_DIR)
-	mkdir -p $(dir $(PLUGIN_DIR))
-	cp -r $(SKILL_DIR) $(PLUGIN_DIR)
-	@echo "Synced plugin copy -> $(PLUGIN_DIR)"
+# The image holds only server.py + requirements.txt (see .dockerignore — key
+# files can never enter the build context).
 
-skill-install: skill
-	mkdir -p $(HOME)/.claude/skills
-	rm -rf $(HOME)/.claude/skills/$(SKILL_NAME)
-	cp -r $(SKILL_DIR) $(HOME)/.claude/skills/$(SKILL_NAME)
-	@echo "Installed to $(HOME)/.claude/skills/$(SKILL_NAME)"
-
-skill-package: skill
-	mkdir -p $(DIST_DIR)
-	rm -f $(DIST_DIR)/$(SKILL_NAME)-skill.zip
-	cd $(dir $(SKILL_DIR)) && zip -qr $(CURDIR)/$(DIST_DIR)/$(SKILL_NAME)-skill.zip $(notdir $(SKILL_DIR))
-	@echo "Packaged $(DIST_DIR)/$(SKILL_NAME)-skill.zip"
-	@unzip -l $(DIST_DIR)/$(SKILL_NAME)-skill.zip
-
-# The image contains only server.py + requirements (see .dockerignore — key
-# files can never enter the build context). Bump VERSION with plugin.json.
+# Plain local build: single arch, loaded into the local daemon. What a dev wants
+# when iterating; needs no registry login.
 docker-build:
 	docker build -t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 
-docker-push: docker-build
-	docker push $(IMAGE):$(VERSION)
-	docker push $(IMAGE):latest
+# Multi-arch, build only. Verifies both platforms compile without publishing.
+docker-buildx:
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 
-init: skill
-	@if [ -z "$(TARGET)" ] && ! echo "$(ARGS)" | grep -q -- --global; then \
-		echo "usage: make init TARGET=/path/to/project [ARGS='--output-dir ./images ...']"; \
-		echo "   or: make init ARGS='--global ...'"; \
-		exit 1; \
-	fi
-	./project-setup.sh $(TARGET) $(ARGS)
+# Multi-arch publish. buildx cannot --load a multi-platform result, so this
+# pushes straight to the registry: run `docker login` first.
+docker-push:
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest --push .
+
+validate:
+	claude plugin validate .

@@ -1,138 +1,127 @@
 ---
 name: nb2lite-image
-description: Generate and edit images with Google's gemini-3.1-flash-lite-image (NB2Lite) via the stateful Interactions API. Use when the user asks to generate, edit, refine, or iterate on images, do multi-turn image editing with interaction IDs, edit a local image file, tune aspect ratio or thinking level, or set up/debug the NB2Lite MCP agent. Triggers include "generate an image", "edit this image", "nb2lite", "flash-lite-image", "Interactions API", "interaction id", "aspect ratio", "thinking level".
+description: Generate and edit images with Google's Gemini image models (Nano Banana 2.1, Nano Banana 2/Pro, NB2Lite) via the stateful Interactions API. Use when the user asks to generate, edit, refine, or iterate on images, do multi-turn image editing with interaction IDs, edit a local image file, tune aspect ratio, image size, or thinking level, or set up/debug the NB2Lite MCP agent. Triggers include "generate an image", "edit this image", "nano banana", "nb2lite", "flash-lite-image", "Interactions API", "interaction id", "aspect ratio", "thinking level".
 ---
 
-# NB2Lite Image Generation
+# Gemini image generation & stateful editing
 
-Generate and iteratively edit images with `gemini-3.1-flash-lite-image` — Google's
-high-efficiency image model with sub-2-second generations and stateful multi-turn
-editing via the Interactions API. Two ways to act:
+Generate and iteratively edit images with Google's Gemini image models through
+the **Interactions API**, which persists each turn's visual context server-side
+so edits preserve character, style, lighting, and pixel continuity instead of
+re-rolling the scene.
 
-1. **Preferred — MCP agent tools.** If the `nb2lite-agent` MCP server is connected
-   in this session, use its tools (catalog below). They wrap the Interactions API
-   calls with input validation, mime-type detection, and concurrency-safe file
-   saving.
-2. **Fallback — direct SDK.** If the MCP server is not connected, either offer to
-   register the bundled server (see "Registering the MCP server") or call the
-   Interactions API directly with the `google-genai` Python SDK using the examples
-   in `references/gemini-interactions-api.md`.
+Two ways to act:
 
-## Bundled files
-
-- `mcp/server.py` — the FastMCP NB2Lite agent (snapshot of the repo-root
-  `server.py`; the live copy at the repo root is authoritative if the two differ).
-- `mcp/requirements.txt` — Python dependencies (`google-genai`, `mcp`).
-- `mcp/project-setup.sh` — one-command installer: copies this skill into a target
-  project and registers the MCP server (see "Registering the MCP server").
-- `references/gemini-interactions-api.md` — the Interactions API developer guide:
-  stateful vs. stateless architecture, parameter cheat sheet, Python SDK examples,
-  best practices for multi-turn editing. Read it when working without the MCP
-  tools, composing raw SDK calls, or answering API questions.
-
-## Registering the MCP server
-
-Easiest path — run the bundled installer (idempotent; installs this skill into the
-target project and writes the `nb2lite-agent` entry into the project's `.mcp.json`,
-using the system `python3` — it warns if the pip deps below are missing but never
-creates a venv):
-
-```bash
-mcp/project-setup.sh /path/to/project                    # one project
-mcp/project-setup.sh --global                            # all projects (user scope)
-# from the skill repo root: make init TARGET=/path/to/project ARGS='--model <name>'
-```
-
-Run `mcp/project-setup.sh --help` for all options (`--model`, `--output-dir`,
-`--server-name`, `--skip-deps`). Then restart Claude Code in the target project and
-approve the server when prompted; `/mcp` should list `nb2lite-agent`.
-
-Manual alternative:
-
-```bash
-claude mcp add nb2lite-agent \
-  --env GEMINI_API_KEY=<key> \
-  --env GEMINI_MODEL_NAME=gemini-3.1-flash-lite-image \
-  --env IMAGE_OUTPUT_DIR=./images \
-  -- python .claude/skills/nb2lite-image/mcp/server.py
-```
-
-Plugin alternative — install from the marketplace (auto-registers the server via
-the plugin manifest; the pip deps and API key are still required, and the server
-reads the key from the environment):
-
-```
-/plugin marketplace add xbill9/nb2lite-skill-claude
-/plugin install nb2lite-image@nb2lite-skill-claude
-```
-
-Requires: `pip install -r mcp/requirements.txt` and a Gemini API key. The server
-reads config from env vars: `GEMINI_API_KEY` (or `GOOGLE_API_KEY` fallback),
-`GEMINI_MODEL_NAME` (default `gemini-3.1-flash-lite-image`), and
-`IMAGE_OUTPUT_DIR` (default `.`). The repo-root `set_env.sh` helper reads or
-prompts for the key, persists it to `~/gemini.key`, writes `.env`, and patches an
-existing `.mcp.json` entry — the installer reuses `~/gemini.key` automatically
-when present.
+1. **Preferred — MCP agent tools.** If the `nb2lite-agent` MCP server is
+   connected, use its tools (catalog below). They wrap the API with per-model
+   validation, mime-type detection, retries, and concurrency-safe saving.
+2. **Fallback — direct SDK.** If it is not connected, either offer to install it
+   (see "Installing the server") or call the API directly with the
+   `google-genai` Python SDK using `references/gemini-interactions-api.md`.
 
 ## Standard workflow
 
-1. **Config first.** `get_help` reports whether an API key is set, the active
-   model, and the output directory. If the key is missing, stop and have the user
-   run `set_env.sh` (or export `GEMINI_API_KEY`) — every other tool will fail
-   without it.
-2. **Generate.** `generate_image(prompt, aspect_ratio, thinking_level)` creates a
-   1k-resolution image, saves it locally, and returns the saved path plus an
-   **interaction ID**. Every call sets `store=True`, so the visual context
-   persists on Google's servers for follow-up edits.
+1. **Config first.** Call `get_help`. It reports the auth mode, active model,
+   output directory, and `HOST_OUTPUT_DIR`. If auth is missing, stop and tell the
+   user — every other tool will fail.
+2. **Generate.** `generate_image(prompt, …)` saves the image and returns the
+   path plus an **interaction ID**.
 3. **Iterate statefully.** `edit_image(previous_interaction_id, edit_prompt)`
-   applies incremental changes while preserving character, style, and pixel
-   continuity. Each edit returns a **new** interaction ID — always chain the most
-   recent one into the next edit, not the original.
-4. **Edit local files.** `edit_local_image(image_path, edit_prompt)` uploads an
-   existing image inline as base64 and applies the described edit — use it for
-   files that did not come from a prior interaction. It too returns an interaction
-   ID, so subsequent refinements should switch to `edit_image`.
-5. **Deliver.** Outputs land in `IMAGE_OUTPUT_DIR` as
-   `<prefix>_<timestamp>_<uuid8>.<ext>` (`gen_`, `edit_`, or `edit_local_`
-   prefix; extension follows the returned mime type — png/jpg/webp). Report the
-   absolute saved path back to the user.
+   applies incremental changes. Each edit returns a **new** ID — always chain the
+   most recent one, never the original.
+4. **Edit local files.** `edit_local_image(image_path, edit_prompt)` for images
+   that did not come from a prior interaction. It also returns an ID, so
+   follow-up edits can chain from it.
+5. **Deliver.** Report the saved path. Under Docker with `HOST_OUTPUT_DIR` set,
+   the reported path is already the host-visible one — use it as given.
 
-## MCP tool catalog (by task)
+## Tool catalog
 
-**Generation:** `generate_image` (text → image; saves locally, returns
-interaction ID)
+**Generation:** `generate_image(prompt, aspect_ratio="1:1", thinking_level, image_size, mime_type, store=True)`
 
-**Editing:** `edit_image` (stateful multi-turn edit by interaction ID),
-`edit_local_image` (inline base64 upload of a local file + edit prompt)
+**Editing:** `edit_image(previous_interaction_id, edit_prompt, thinking_level, image_size)` — stateful, no `aspect_ratio` (inherited).
+`edit_local_image(image_path, edit_prompt, aspect_ratio, thinking_level, image_size, mime_type, store=True)` — inline base64 upload.
 
-**Diagnostics:** `get_help` (live configuration: key status, model name, output
-directory, full tool reference)
+**Diagnostics:** `get_help()` — live configuration and full tool reference.
 
-## Parameter constraints
+## Model capabilities
 
-Validated by the server — out-of-range values fail fast:
+Set by `GEMINI_MODEL_NAME`; default `gemini-nano-banana-2.1`.
 
-- **Aspect ratios:** `1:1` (default), `16:9`, `9:16`, `4:3`, `3:4`.
-  `edit_image` takes no aspect ratio — stateful edits keep the previous turn's.
-- **Thinking levels:** `low` (default), `high`. Use `low` for fast previews and
-  prototyping; `high` for complex rendering, accurate text layout, or character
-  composition. (The generic Interactions API spec also lists `minimal` and
-  `medium`, but the live API rejects them for this model with HTTP 400.)
+| Model | `image_size` | `thinking_level` |
+| :--- | :--- | :--- |
+| `gemini-nano-banana-2.1` *(default)* | 1K, 2K, 4K | minimal, low, medium, high |
+| `gemini-3.1-flash-image` | 1K, 2K | minimal, low, medium, high |
+| `gemini-3-pro-image` | 1K, 2K, 4K | low, medium, high |
+| `gemini-3.1-flash-lite-image` | 1K only | low, high |
+
+**Aspect ratios** (all models): `1:1` (default), `3:2`, `2:3`, `3:4`, `4:3`,
+`4:5`, `5:4`, `9:16`, `16:9`, `21:9`.
+
+`image_size` is case-sensitive — `1k` is rejected, `1K` is correct. A model not
+in this table is **not** validated locally; the request goes through and the
+API's error is the answer.
 
 ## Best practices & cautions
 
 - **Keep edit prompts incremental.** Describe only the change ("make the sky dark
-  blue with lightning"), not the whole scene again — the interaction context
-  already holds the rest.
-- **Don't change aspect ratio mid-session.** Switching ratios between stateful
-  turns degrades pixel continuity; pick the ratio at generation time.
-- **Chain the latest interaction ID.** Editing from a stale ID silently forks the
-  session from an older state.
-- **Tool errors return as text.** Failures come back as `🔴 ...` strings rather
-  than protocol errors — check for them before reporting success. A missing-key
-  failure means the server process needs the env vars set and a restart.
-- **Generated images are billable API calls** — batch related edits into one
-  well-specified prompt when the user cares about cost, and prefer lower thinking
-  levels for drafts.
-- **Never commit secrets.** `.env`, `~/gemini.key`, and `.mcp.json` (which may
-  carry injected keys) are gitignored here — keep it that way in target projects.
+  blue with lightning"), not the whole scene — the interaction context holds the
+  rest.
+- **Don't change aspect ratio mid-session.** Switching between stateful turns
+  degrades pixel continuity. Pick it at generation time.
+- **Chain the latest interaction ID.** A stale ID silently forks the session from
+  an older state rather than erroring.
+- **Match thinking level to the job.** Lower for fast drafts; higher for complex
+  rendering, accurate text layout, or character composition. Valid values differ
+  per model — see the table.
+- **Tool failures raise MCP errors.** A failure surfaces as a protocol error, not
+  as text — you will not silently get a fake success.
+- **Generations are billable.** Batch related edits into one well-specified
+  prompt when the user cares about cost, and prefer lower thinking levels for
+  drafts.
+- **`store=False` forfeits later editing.** The turn returns an image but its
+  context is not persisted, so it cannot be used as `previous_interaction_id`.
+- **Never commit secrets.** `.env` and `.mcp.json` may carry keys.
+
+## Installing the server
+
+Preferred — the plugin, which installs this skill *and* registers the server as a
+Docker container:
+
+```
+/plugin marketplace add tkhduracell/nb2lite-skill-claude
+/plugin install nb2lite-image@nb2lite-skill-claude
+```
+
+Requires Docker and `GEMINI_API_KEY` exported in the environment (the manifest
+passes it by name, so the key never enters the manifest or git).
+
+Fallback — server only, no skill, no Docker:
+
+```bash
+pip install -r requirements.txt
+claude mcp add nb2lite-agent \
+  --env GEMINI_API_KEY=<key> \
+  --env GEMINI_MODEL_NAME=gemini-nano-banana-2.1 \
+  --env IMAGE_OUTPUT_DIR=./images \
+  -- python3 /path/to/server.py
+```
+
+Then restart Claude Code and approve the server; `/mcp` should list
+`nb2lite-agent`.
+
+### Configuration
+
+`GEMINI_API_KEY` (or `GOOGLE_API_KEY`), `GEMINI_MODEL_NAME`,
+`IMAGE_OUTPUT_DIR`, `HOST_OUTPUT_DIR` (display-only host path for Docker
+mounts), `GEMINI_TIMEOUT_SECONDS`, `GEMINI_RETRY_ATTEMPTS`,
+`MAX_INPUT_IMAGE_MB`. ADC is available behind `GOOGLE_GENAI_USE_ENTERPRISE=1`
+with `GOOGLE_CLOUD_PROJECT`, though image output on that path is unverified —
+prefer the API key.
+
+## Bundled files
+
+- `references/gemini-interactions-api.md` — the Interactions API guide: stateful
+  vs. stateless architecture, parameter cheat sheet, Python SDK examples, and
+  multi-turn editing practice. Read it when working without the MCP tools,
+  composing raw SDK calls, or answering API questions.

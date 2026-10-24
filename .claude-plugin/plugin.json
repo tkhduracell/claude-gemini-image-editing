@@ -1,19 +1,32 @@
 {
   "name": "nb2lite-image",
   "description": "Generate and edit images with Google's gemini-3.1-flash-lite-image (NB2Lite) via the stateful Interactions API: text-to-image, multi-turn stateful edits, and local-image editing through the nb2lite-agent MCP server.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": {
-    "name": "xbill9",
-    "url": "https://github.com/xbill9"
+    "name": "tkhduracell",
+    "url": "https://github.com/tkhduracell"
   },
-  "homepage": "https://github.com/xbill9/nb2lite-skill-claude",
-  "repository": "https://github.com/xbill9/nb2lite-skill-claude",
+  "homepage": "https://github.com/tkhduracell/nb2lite-skill-claude",
+  "repository": "https://github.com/tkhduracell/nb2lite-skill-claude",
   "license": "Apache-2.0",
   "keywords": ["gemini", "image-generation", "nb2lite", "mcp", "interactions-api"],
   "mcpServers": {
     "nb2lite-agent": {
-      "command": "python3",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/skills/nb2lite-image/mcp/server.py"]
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "GEMINI_API_KEY",
+        "-e",
+        "GEMINI_MODEL_NAME",
+        "-e",
+        "HOST_OUTPUT_DIR",
+        "-v",
+        "${CLAUDE_PROJECT_DIR}/images:/images",
+        "tkhduracell/nb2lite-agent:0.2.0"
+      ]
     }
   }
 }

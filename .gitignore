@@ -1,11 +1,15 @@
 __pycache__/
 *.pyc
-*.jpg
-!devto-cover.jpg
-*.png
-*.webp
-.agents/
 .ruff_cache
 .mypy_cache
+
+# Generated image output (the default IMAGE_OUTPUT_DIR / Docker bind-mount
+# target). Scoped to this directory on purpose — a repo-wide *.jpg / *.png
+# ignore silently swallows legitimate documentation screenshots.
+/images/
+
+.agents/
+
+# Both embed the Gemini API key — never commit either.
 .env
 .mcp.json
