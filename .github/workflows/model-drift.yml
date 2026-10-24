@@ -26,7 +26,7 @@ jobs:
     # fork, and skip cleanly (not fail) when the secret is absent. schedule
     # and workflow_dispatch never carry a pull_request payload.
     if: >-
-      github.repository == 'tkhduracell/nb2lite-skill-claude' &&
+      github.repository == 'tkhduracell/claude-gemini-image-editing' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     steps:

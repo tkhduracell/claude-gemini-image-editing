@@ -1,11 +1,11 @@
-# CLAUDE.md — NB2Lite Image Skill & nb2lite-agent MCP server
+# CLAUDE.md — Gemini Image Editing skill & gemini-image MCP server
 
 Guidance for Claude Code when working in this repository.
 
 ## Project overview
 
-This repository packages one Claude Code skill (`nb2lite-image`) and one MCP
-server (`nb2lite-agent`, an `MCPServer` app in `server.py`) for Google's Gemini
+This repository packages one Claude Code skill (`gemini-image-editing`) and one MCP
+server (`gemini-image`, an `MCPServer` app in `server.py`) for Google's Gemini
 image models, driven through the stateful Interactions API. Together they:
 
 1. **Generate images** — text-to-image with configurable aspect ratio, image
@@ -33,15 +33,15 @@ place — there are no snapshots to refresh and no `make skill`.
 | `server.py` | The MCP server. Authoritative and unique. |
 | `test_agent.py` | Mocked unit tests — no network, no API key. |
 | `requirements.txt` | Pinned deps. |
-| `skills/nb2lite-image/` | The skill, in the layout the plugin loader requires. |
-| `SKILL.md`, `references/` | **Symlinks** into `skills/nb2lite-image/`. |
-| `.claude/skills/nb2lite-image` | Symlink, so the skill is active in this repo. |
+| `skills/gemini-image-editing/` | The skill, in the layout the plugin loader requires. |
+| `SKILL.md`, `references/` | **Symlinks** into `skills/gemini-image-editing/`. |
+| `.claude/skills/gemini-image-editing` | Symlink, so the skill is active in this repo. |
 | `.claude-plugin/` | Plugin + marketplace manifests. |
 | `GEMINI.md` | Interactions API developer guide. |
 | `skills-lock.json` | Upstream provenance of the vendored reference doc. |
 
 `SKILL.md` and `references/` at the repo root are symlinks — editing either path
-edits the same file. The real files live under `skills/nb2lite-image/` because
+edits the same file. The real files live under `skills/gemini-image-editing/` because
 the plugin loader requires that layout.
 
 **Generated, gitignored:** `/images/` (output), `.env`, `.mcp.json`. Never commit
@@ -54,15 +54,15 @@ container**. The plugin ships the skill *and* the server; `claude mcp add` ships
 only the server, which is why it is the fallback.
 
 ```
-/plugin marketplace add tkhduracell/nb2lite-skill-claude
-/plugin install nb2lite-image@nb2lite-skill-claude
+/plugin marketplace add tkhduracell/claude-gemini-image-editing
+/plugin install gemini-image-editing@claude-gemini-image-editing
 ```
 
 The manifest passes `-e GEMINI_API_KEY` **by name with no value** on purpose:
 Docker inherits it from the environment, so the key never enters the manifest or
 git. Do not "fix" this by adding a value.
 
-Image: `tkhduracell/nb2lite-agent`. `VERSION` in the `Makefile` must match
+Image: `tkhduracell/gemini-image`. `VERSION` in the `Makefile` must match
 `version` in `plugin.json` **and** the tag pinned in its `args` — CI enforces the
 first two.
 
@@ -110,10 +110,16 @@ comments, or help text. Use `your-project-id`.
 
 | Model | `image_size` | `thinking_level` |
 | :--- | :--- | :--- |
-| `gemini-nano-banana-2.1` *(default)* | 1K, 2K, 4K | minimal, low, medium, high |
-| `gemini-3.1-flash-image` | 1K, 2K | minimal, low, medium, high |
-| `gemini-3-pro-image` | 1K, 2K, 4K | low, medium, high |
-| `gemini-3.1-flash-lite-image` | 1K only | low, high |
+| `gemini-nano-banana-2.1` *(default)* | 1K, 2K, 4K | minimal, medium, high |
+| `gemini-3.1-flash-image` | 1K, 2K, 4K | minimal, high |
+| `gemini-3-pro-image` | 1K, 2K, 4K | low, high |
+| `gemini-3.1-flash-lite-image` | 1K only | minimal, high |
+
+These are **measured against the live API**, not copied from the docs — the
+published tables are wrong about thinking levels for every model above. No
+level works everywhere: `low` is rejected by the 3.1 family *and* by
+nano-banana-2.1, while `minimal` is rejected by `gemini-3-pro-image`. Omit
+`thinking_level` and the server picks one the active model accepts.
 
 Aspect ratios (all models): `1:1`, `3:2`, `2:3`, `3:4`, `4:3`, `4:5`, `5:4`,
 `9:16`, `16:9`, `21:9`. `image_size` is case-sensitive — the API rejects `1k`.

@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE: tkhduracell/nb2lite-agent
+  IMAGE: tkhduracell/gemini-image
 
 jobs:
   # PRs: build only, single-arch, no registry login and no push. This catches

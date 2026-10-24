@@ -1,17 +1,17 @@
 {
-  "name": "nb2lite-image",
-  "description": "Generate and edit images with Google's gemini-3.1-flash-lite-image (NB2Lite) via the stateful Interactions API: text-to-image, multi-turn stateful edits, and local-image editing through the nb2lite-agent MCP server.",
+  "name": "gemini-image-editing",
+  "description": "Generate and edit images with Google's Gemini image models (Nano Banana 2.1, Nano Banana 2/Pro) via the stateful Interactions API: text-to-image, multi-turn stateful edits, and local-image editing through the gemini-image MCP server.",
   "version": "0.2.0",
   "author": {
     "name": "tkhduracell",
     "url": "https://github.com/tkhduracell"
   },
-  "homepage": "https://github.com/tkhduracell/nb2lite-skill-claude",
-  "repository": "https://github.com/tkhduracell/nb2lite-skill-claude",
+  "homepage": "https://github.com/tkhduracell/claude-gemini-image-editing",
+  "repository": "https://github.com/tkhduracell/claude-gemini-image-editing",
   "license": "Apache-2.0",
-  "keywords": ["gemini", "image-generation", "nb2lite", "mcp", "interactions-api"],
+  "keywords": ["gemini", "image-generation", "gemini-image", "mcp", "interactions-api"],
   "mcpServers": {
-    "nb2lite-agent": {
+    "gemini-image": {
       "command": "docker",
       "args": [
         "run",
@@ -25,7 +25,7 @@
         "HOST_OUTPUT_DIR",
         "-v",
         "${CLAUDE_PROJECT_DIR}/images:/images",
-        "tkhduracell/nb2lite-agent:0.2.0"
+        "tkhduracell/gemini-image:0.2.0"
       ]
     }
   }

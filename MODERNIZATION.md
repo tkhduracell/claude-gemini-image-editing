@@ -1,6 +1,6 @@
-# Modernization proposal — nb2lite-skill-claude fork
+# Modernization proposal — claude-gemini-image-editing fork
 
-Fork: [tkhduracell/nb2lite-skill-claude](https://github.com/tkhduracell/nb2lite-skill-claude)
+Fork: [tkhduracell/claude-gemini-image-editing](https://github.com/tkhduracell/claude-gemini-image-editing)
 Upstream last pushed 2026-07-22. Reviewed 2026-10-24.
 
 Target shape: **packaged as a Claude Code plugin whose manifest launches a
@@ -94,20 +94,20 @@ The existing `Dockerfile` is close but needs four fixes to be the main path.
 FROM python:3.13-slim
 
 # Pin both deps. google-genai>=2.3.0 is required for interaction.output_image.
-COPY requirements.txt /opt/nb2lite/requirements.txt
-RUN pip install --no-cache-dir -r /opt/nb2lite/requirements.txt
+COPY requirements.txt /opt/gemini-image/requirements.txt
+RUN pip install --no-cache-dir -r /opt/gemini-image/requirements.txt
 
-COPY server.py /opt/nb2lite/server.py
+COPY server.py /opt/gemini-image/server.py
 
 # Non-root so images written to a bind mount aren't root-owned on the host.
-RUN useradd --create-home --uid 1000 nb2lite
-USER nb2lite
+RUN useradd --create-home --uid 1000 gemini-image
+USER gemini-image
 
 ENV PYTHONUNBUFFERED=1 \
     IMAGE_OUTPUT_DIR=/images
 WORKDIR /images
 
-ENTRYPOINT ["python", "/opt/nb2lite/server.py"]
+ENTRYPOINT ["python", "/opt/gemini-image/server.py"]
 ```
 
 with `requirements.txt` pinned:
@@ -120,7 +120,7 @@ mcp>=2.3.0,<3
 Build multi-arch so it runs natively on your Mac and on amd64 CI:
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t <you>/nb2lite-agent:0.2.0 --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t <you>/gemini-image:0.2.0 --push .
 ```
 
 ### Registering the Docker server with Claude Code
@@ -130,14 +130,14 @@ the primary path). Still an improvement on the current
 `init.sh`/`set_env.sh`/`project-setup.sh` trio, since it needs no pip and no venv:
 
 ```bash
-claude mcp add nb2lite-agent \
+claude mcp add gemini-image \
   --env GEMINI_API_KEY=<key> \
   --env GEMINI_MODEL_NAME=gemini-nano-banana-2.1 \
   --env IMAGE_OUTPUT_DIR=/images \
   -- docker run --rm -i \
        -e GEMINI_API_KEY -e GEMINI_MODEL_NAME -e IMAGE_OUTPUT_DIR \
        -v "$PWD/images:/images" \
-       <you>/nb2lite-agent:0.2.0
+       <you>/gemini-image:0.2.0
 ```
 
 One caveat worth handling explicitly: the server returns
@@ -177,14 +177,14 @@ the server reads `GEMINI_API_KEY` from the environment. Point it at Docker:
 ```json
 {
   "mcpServers": {
-    "nb2lite-agent": {
+    "gemini-image": {
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
         "-e", "GEMINI_API_KEY",
         "-e", "GEMINI_MODEL_NAME",
         "-v", "${CLAUDE_PROJECT_DIR}/images:/images",
-        "<you>/nb2lite-agent:0.2.0"
+        "<you>/gemini-image:0.2.0"
       ]
     }
   }
@@ -198,8 +198,8 @@ the §4 goal, achieved by construction.
 Then install becomes:
 
 ```
-/plugin marketplace add <you>/nb2lite-skill-claude
-/plugin install nb2lite-image@nb2lite-skill-claude
+/plugin marketplace add <you>/claude-gemini-image-editing
+/plugin install gemini-image-editing@claude-gemini-image-editing
 ```
 
 **One real tradeoff:** the plugin requires Docker on the machine, and a missing
@@ -225,12 +225,12 @@ If the server ships as a Docker image, the skill no longer needs to bundle it at
 all. The skill becomes just `SKILL.md` + `references/` — no `mcp/` subdirectory,
 because the plugin manifest (§2b) launches the container instead.
 
-That deletes `refresh_skill.py`, `mcp/`, `dist/nb2lite-image-skill.zip`, the
+That deletes `refresh_skill.py`, `mcp/`, `dist/gemini-image-editing-skill.zip`, the
 `make skill-package`/`skill-install` targets, `project-setup.sh`,
 `mcp/project-setup.sh`, `init.sh`, `set_env.sh`, and the "snapshot sync model"
 section of `CLAUDE.md`.
 
-**What survives:** the plugin layout needs the skill at `skills/nb2lite-image/`,
+**What survives:** the plugin layout needs the skill at `skills/gemini-image-editing/`,
 so keep one copy there as the source of truth and have `.claude/skills/` be a
 symlink to it (so the skill is active when working in this repo, without a
 second copy). Two text files, no Python to sync — `make skill` becomes

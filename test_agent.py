@@ -8,12 +8,14 @@ from unittest.mock import MagicMock, patch
 import server
 from server import (
     ASPECT_RATIOS,
+    DEFAULT_THINKING,
     IMAGE_SIZES,
     MODEL_CAPS,
     ToolError,
     _extension_for,
     _get_image_data,
     _handle_response,
+    _resolve_thinking,
     _validate_inputs,
     edit_image,
     edit_local_image,
@@ -37,7 +39,7 @@ def _mock_client(
     return mock_client
 
 
-class TestNB2LiteAgent(unittest.TestCase):
+class TestGeminiImageAgent(unittest.TestCase):
     def setUp(self):
         # Create a temporary file for image tests
         self.test_dir = tempfile.TemporaryDirectory()
@@ -235,31 +237,67 @@ class TestValidation(unittest.TestCase):
         self.assertIn("ultra", str(ctx.exception))
 
     def test_thinking_level_is_per_model(self):
-        """'medium' is valid for nano-banana-2.1 but rejected for flash-lite."""
+        """Accepted levels differ per model; values measured against the API.
+
+        No level is universal: 'low' is rejected by the whole 3.1 family and by
+        nano-banana-2.1, while 'minimal' is rejected by gemini-3-pro-image.
+        """
+        # nano-banana-2.1: minimal/medium/high, NOT low
         _validate_inputs(thinking_level="medium", model="gemini-nano-banana-2.1")
+        _validate_inputs(thinking_level="minimal", model="gemini-nano-banana-2.1")
         with self.assertRaises(ValueError):
-            _validate_inputs(
-                thinking_level="medium", model="gemini-3.1-flash-lite-image"
-            )
-        with self.assertRaises(ValueError):
-            _validate_inputs(
-                thinking_level="minimal", model="gemini-3.1-flash-lite-image"
-            )
-        # pro-image rejects 'minimal' but accepts 'medium'
-        _validate_inputs(thinking_level="medium", model="gemini-3-pro-image")
-        with self.assertRaises(ValueError):
-            _validate_inputs(thinking_level="minimal", model="gemini-3-pro-image")
+            _validate_inputs(thinking_level="low", model="gemini-nano-banana-2.1")
+
+        # the 3.1 family: minimal/high only
+        for model in ("gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"):
+            _validate_inputs(thinking_level="minimal", model=model)
+            _validate_inputs(thinking_level="high", model=model)
+            for bad in ("low", "medium"):
+                with self.assertRaises(ValueError):
+                    _validate_inputs(thinking_level=bad, model=model)
+
+        # pro-image is the odd one out: low/high, rejecting minimal/medium
+        _validate_inputs(thinking_level="low", model="gemini-3-pro-image")
+        for bad in ("minimal", "medium"):
+            with self.assertRaises(ValueError):
+                _validate_inputs(thinking_level=bad, model="gemini-3-pro-image")
+
+    def test_default_thinking_level_is_accepted_by_its_model(self):
+        """Every model's default must be in its own accepted set.
+
+        Regression guard: the tools used to default to a hardcoded 'low', which
+        the default model rejects outright - so every call failed out of the box.
+        """
+        for model, default in DEFAULT_THINKING.items():
+            self.assertIn(default, MODEL_CAPS[model]["thinking"], model)
+            _validate_inputs(thinking_level=default, model=model)
+
+    def test_resolve_thinking_falls_back_per_model(self):
+        """None resolves to the model's default; an unknown model sends nothing."""
+        self.assertEqual(_resolve_thinking(None, "gemini-3-pro-image"), "low")
+        self.assertEqual(_resolve_thinking(None, "gemini-nano-banana-2.1"), "minimal")
+        self.assertEqual(_resolve_thinking("high", "gemini-3-pro-image"), "high")
+        self.assertIsNone(_resolve_thinking(None, "some-future-model"))
 
     def test_image_size_is_per_model(self):
-        """flash-lite supports only 1K; pro-image supports up to 4K."""
-        _validate_inputs(image_size="1K", model="gemini-3.1-flash-lite-image")
-        with self.assertRaises(ValueError) as ctx:
-            _validate_inputs(image_size="2K", model="gemini-3.1-flash-lite-image")
-        self.assertIn("2K", str(ctx.exception))
+        """flash-lite is 1K-only; every other model goes up to 4K.
 
-        _validate_inputs(image_size="4K", model="gemini-3-pro-image")
-        with self.assertRaises(ValueError):
-            _validate_inputs(image_size="4K", model="gemini-3.1-flash-image")
+        Sizes measured against the live API - flash-image does accept 4K,
+        contrary to what the published docs list.
+        """
+        _validate_inputs(image_size="1K", model="gemini-3.1-flash-lite-image")
+        for bad in ("2K", "4K"):
+            with self.assertRaises(ValueError) as ctx:
+                _validate_inputs(image_size=bad, model="gemini-3.1-flash-lite-image")
+            self.assertIn(bad, str(ctx.exception))
+
+        for model in (
+            "gemini-3-pro-image",
+            "gemini-3.1-flash-image",
+            "gemini-nano-banana-2.1",
+        ):
+            for size in ("1K", "2K", "4K"):
+                _validate_inputs(image_size=size, model=model)
 
     def test_image_size_requires_uppercase_k(self):
         """Lowercase 'k' is rejected by the API, so reject it locally too."""
@@ -302,7 +340,7 @@ class TestValidation(unittest.TestCase):
             generate_image(
                 prompt="p",
                 aspect_ratio="16:9",
-                thinking_level="low",
+                thinking_level="medium",
                 image_size="2K",
                 mime_type="image/jpeg",
             )

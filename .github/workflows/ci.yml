@@ -210,7 +210,7 @@ jobs:
     #     and the job is SKIPPED (not failed), so a fresh fork with zero
     #     secrets configured still gets a green CI run.
     if: >-
-      github.repository == 'tkhduracell/nb2lite-skill-claude' &&
+      github.repository == 'tkhduracell/claude-gemini-image-editing' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     steps:

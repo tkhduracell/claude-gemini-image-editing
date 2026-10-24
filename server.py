@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 # Initialize the MCP server
-mcp = MCPServer("NB2Lite Agent")
+mcp = MCPServer("Gemini Image Editing")
 
 # Configure Logging to stderr
 logging.basicConfig(
@@ -25,7 +25,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stderr)],
 )
-logger = logging.getLogger("nb2lite-agent")
+logger = logging.getLogger("gemini-image")
 
 # Global client reference, lazily initialized
 client = None
@@ -56,25 +56,56 @@ MIME_TYPES = {"image/png", "image/jpeg"}
 # of them. A model absent from this table is NOT rejected locally - see
 # _validate_inputs - because a stale allowlist blocking a valid new model is
 # worse than letting the API return its own clear error.
+# Capabilities measured directly against the live Interactions API on
+# 2026-10-25, not taken from the docs - the published tables disagree with the
+# API on thinking levels for every model here. Re-probe before trusting an
+# edit to this table.
 MODEL_CAPS: dict[str, dict[str, Any]] = {
     "gemini-3.1-flash-lite-image": {
         "sizes": {"1K"},
-        # minimal/medium return HTTP 400 for this model.
-        "thinking": {"low", "high"},
+        # low/medium return HTTP 400 for this model.
+        "thinking": {"minimal", "high"},
     },
     "gemini-3.1-flash-image": {
-        "sizes": {"1K", "2K"},
-        "thinking": {"minimal", "low", "medium", "high"},
+        "sizes": {"1K", "2K", "4K"},
+        # low/medium return HTTP 400 for this model.
+        "thinking": {"minimal", "high"},
     },
     "gemini-3-pro-image": {
         "sizes": {"1K", "2K", "4K"},
-        "thinking": {"low", "medium", "high"},
+        # This model is the odd one out: it takes low/high but rejects
+        # minimal/medium, the opposite of the 3.1 family.
+        "thinking": {"low", "high"},
     },
     "gemini-nano-banana-2.1": {
         "sizes": {"1K", "2K", "4K"},
-        "thinking": {"minimal", "low", "medium", "high"},
+        # low returns HTTP 400 for this model, though minimal is accepted.
+        "thinking": {"minimal", "medium", "high"},
     },
 }
+
+# Thinking level used when the caller does not pick one. There is no value that
+# every model accepts - "low" is rejected by the whole 3.1 family and by
+# nano-banana-2.1, while "minimal" is rejected by gemini-3-pro-image - so the
+# default has to be per-model. "minimal"/"low" are the cheapest level each model
+# takes; an unknown model sends no thinking_level at all and lets the API apply
+# its own default.
+DEFAULT_THINKING = {
+    "gemini-3.1-flash-lite-image": "minimal",
+    "gemini-3.1-flash-image": "minimal",
+    "gemini-3-pro-image": "low",
+    "gemini-nano-banana-2.1": "minimal",
+}
+
+
+def _resolve_thinking(
+    thinking_level: str | None, model: str | None = None
+) -> str | None:
+    """Pick the thinking level to send: the caller's, else the model's default."""
+    if thinking_level:
+        return thinking_level
+    return DEFAULT_THINKING.get(model or MODEL_NAME)
+
 
 # Request timeout. HttpOptions.timeout is in MILLISECONDS (the SDK divides by
 # 1000 internally), so the seconds-based env var is converted on use.
@@ -386,7 +417,7 @@ def _handle_response(interaction: Any, output_prefix: str) -> str:
 def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
-    thinking_level: str = "low",
+    thinking_level: str | None = None,
     image_size: str | None = None,
     mime_type: str | None = None,
     store: bool = True,
@@ -419,8 +450,9 @@ def generate_image(
         )
 
         generation_config: dict[str, Any] = {}
-        if thinking_level:
-            generation_config["thinking_level"] = thinking_level.lower()
+        resolved_thinking = _resolve_thinking(thinking_level)
+        if resolved_thinking:
+            generation_config["thinking_level"] = resolved_thinking.lower()
 
         ai_client = _get_client()
         interaction = ai_client.interactions.create(
@@ -441,7 +473,7 @@ def generate_image(
 def edit_image(
     previous_interaction_id: str,
     edit_prompt: str,
-    thinking_level: str = "low",
+    thinking_level: str | None = None,
     image_size: str | None = None,
 ) -> str:
     """Edits a previously generated image using its interaction ID.
@@ -464,8 +496,9 @@ def edit_image(
         response_format = _build_response_format(image_size=image_size)
 
         generation_config: dict[str, Any] = {}
-        if thinking_level:
-            generation_config["thinking_level"] = thinking_level.lower()
+        resolved_thinking = _resolve_thinking(thinking_level)
+        if resolved_thinking:
+            generation_config["thinking_level"] = resolved_thinking.lower()
 
         ai_client = _get_client()
         interaction = ai_client.interactions.create(
@@ -489,7 +522,7 @@ def edit_local_image(
     image_path: str,
     edit_prompt: str,
     aspect_ratio: str = "1:1",
-    thinking_level: str = "low",
+    thinking_level: str | None = None,
     image_size: str | None = None,
     mime_type: str | None = None,
     store: bool = True,
@@ -525,8 +558,9 @@ def edit_local_image(
         )
 
         generation_config: dict[str, Any] = {}
-        if thinking_level:
-            generation_config["thinking_level"] = thinking_level.lower()
+        resolved_thinking = _resolve_thinking(thinking_level)
+        if resolved_thinking:
+            generation_config["thinking_level"] = resolved_thinking.lower()
 
         ai_client = _get_client()
         interaction = ai_client.interactions.create(
@@ -574,7 +608,7 @@ def get_help() -> str:
         )
 
     return (
-        "### 🌌 NB2Lite Agent Help & Configuration\n\n"
+        "### 🌌 Gemini Image Editing Help & Configuration\n\n"
         "This MCP server interfaces with the stateful **Interactions API** using the Google GenAI SDK to generate and edit images.\n\n"
         "#### ⚙️ Configuration Options (Environment Variables)\n"
         "- **`GEMINI_API_KEY` / `GOOGLE_API_KEY`**: API keys used to authenticate with Gemini.\n"

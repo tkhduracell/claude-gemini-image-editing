@@ -1,4 +1,4 @@
-# 🌌 NB2Lite Agent
+# 🌌 Gemini Image Editing
 
 [![Default model: gemini-nano-banana-2.1](https://img.shields.io/badge/Default%20model-gemini--nano--banana--2.1-orange.svg)](#-models)
 [![API: Interactions API](https://img.shields.io/badge/API-Interactions%20API-blue.svg)](GEMINI.md)
@@ -14,10 +14,17 @@ context server-side and returns an `interaction_id`. Passing that ID back as
 preserving character, style, lighting, and pixel continuity — no re-prompting
 the whole scene.
 
-> This is a fork of [xbill9/nb2lite-skill-claude](https://github.com/xbill9/nb2lite-skill-claude),
-> modernized: current model lineup, Docker-first install, pinned dependencies,
-> real MCP errors, retries, and CI. See [MODERNIZATION.md](MODERNIZATION.md) for
-> the full rationale.
+## 🙏 Credits
+
+This project is a fork of **[xbill9/nb2lite-skill-claude](https://github.com/xbill9/nb2lite-skill-claude)**
+by [@xbill9](https://github.com/xbill9), which originated the NB2Lite skill, the
+MCP server design, and the four-tool surface this project still builds on. All
+credit for the original work goes there, and it remains Apache-2.0 with upstream
+copyright retained.
+
+This fork renames the project and modernizes it: the current model lineup,
+Docker-first install, pinned dependencies, mcp 2.x, real MCP errors, retries,
+and CI. See [MODERNIZATION.md](MODERNIZATION.md) for the full rationale.
 
 ---
 
@@ -38,10 +45,16 @@ Set with `GEMINI_MODEL_NAME`. Default: **`gemini-nano-banana-2.1`**.
 
 | Model | Product | `image_size` | `thinking_level` |
 | :--- | :--- | :--- | :--- |
-| `gemini-nano-banana-2.1` *(default)* | Nano Banana 2.1 | 1K, 2K, 4K | minimal, low, medium, high |
-| `gemini-3.1-flash-image` | Nano Banana 2 | 1K, 2K | minimal, low, medium, high |
-| `gemini-3-pro-image` | Nano Banana Pro | 1K, 2K, 4K | low, medium, high |
-| `gemini-3.1-flash-lite-image` | Nano Banana 2 Lite | 1K only | low, high |
+| `gemini-nano-banana-2.1` *(default)* | Nano Banana 2.1 | 1K, 2K, 4K | minimal, medium, high |
+| `gemini-3.1-flash-image` | Nano Banana 2 | 1K, 2K, 4K | minimal, high |
+| `gemini-3-pro-image` | Nano Banana Pro | 1K, 2K, 4K | low, high |
+| `gemini-3.1-flash-lite-image` | Nano Banana 2 Lite | 1K only | minimal, high |
+
+These are **measured against the live API**, not copied from the docs — the
+published tables are wrong about thinking levels for every model above. No
+level works everywhere: `low` is rejected by the 3.1 family *and* by
+nano-banana-2.1, while `minimal` is rejected by `gemini-3-pro-image`. Omit
+`thinking_level` and the server picks one the active model accepts.
 
 **Aspect ratios** (all models): `1:1`, `3:2`, `2:3`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9`.
 
@@ -84,15 +97,15 @@ chain interaction IDs and when not to change aspect ratio) **and** registers the
 MCP server, which runs as a container.
 
 ```bash
-docker pull tkhduracell/nb2lite-agent:0.2.0
+docker pull tkhduracell/gemini-image:0.2.0
 export GEMINI_API_KEY="$(cat ~/gemini.key)"   # or however you store it
 ```
 
 Then in Claude Code:
 
 ```
-/plugin marketplace add tkhduracell/nb2lite-skill-claude
-/plugin install nb2lite-image@nb2lite-skill-claude
+/plugin marketplace add tkhduracell/claude-gemini-image-editing
+/plugin install gemini-image-editing@claude-gemini-image-editing
 ```
 
 The plugin manifest passes `-e GEMINI_API_KEY` **by name, with no value**, so
@@ -105,11 +118,11 @@ For a server-only install with no Docker. Note this does *not* install the
 skill — only the four tools.
 
 ```bash
-git clone https://github.com/tkhduracell/nb2lite-skill-claude.git
-cd nb2lite-skill-claude
+git clone https://github.com/tkhduracell/claude-gemini-image-editing.git
+cd claude-gemini-image-editing
 pip install -r requirements.txt
 
-claude mcp add nb2lite-agent \
+claude mcp add gemini-image \
   --env GEMINI_API_KEY="$(cat ~/gemini.key)" \
   --env GEMINI_MODEL_NAME=gemini-nano-banana-2.1 \
   --env IMAGE_OUTPUT_DIR=./images \
@@ -117,7 +130,7 @@ claude mcp add nb2lite-agent \
 ```
 
 Requires Python 3.10+. Restart Claude Code and approve the server; `/mcp` should
-list `nb2lite-agent`.
+list `gemini-image`.
 
 ---
 
@@ -151,7 +164,7 @@ on the project.
 
 ## 🐳 Docker
 
-Published as `tkhduracell/nb2lite-agent`. The image contains only `server.py`
+Published as `tkhduracell/gemini-image`. The image contains only `server.py`
 and its pinned dependencies — no keys, no Claude Code. `.dockerignore` is
 deny-all-then-allow, so `.env`, `.mcp.json`, and key files cannot enter the
 build context.
@@ -165,7 +178,7 @@ docker run --rm -i \
   -e GEMINI_MODEL_NAME \
   -e HOST_OUTPUT_DIR="$PWD/images" \
   -v "$PWD/images:/images" \
-  tkhduracell/nb2lite-agent:0.2.0
+  tkhduracell/gemini-image:0.2.0
 ```
 
 ### The output-path gotcha
@@ -262,8 +275,8 @@ Dependabot watches pip, GitHub Actions, and the Docker base image weekly.
 | :--- | :--- |
 | `server.py` | The MCP server — the single authoritative copy. |
 | `test_agent.py` | Mocked unit tests. |
-| `skills/nb2lite-image/` | The skill (plugin layout). `SKILL.md` and `references/` at the repo root are symlinks to it. |
-| `.claude/skills/nb2lite-image` | Symlink, so the skill is active when working in this repo. |
+| `skills/gemini-image-editing/` | The skill (plugin layout). `SKILL.md` and `references/` at the repo root are symlinks to it. |
+| `.claude/skills/gemini-image-editing` | Symlink, so the skill is active when working in this repo. |
 | `.claude-plugin/` | Plugin + marketplace manifests. |
 | `references/gemini-interactions-api.md` | Vendored Interactions API guide (provenance in `skills-lock.json`). |
 | `GEMINI.md` | Full Interactions API developer guide. |

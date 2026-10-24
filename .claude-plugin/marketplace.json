@@ -1,15 +1,15 @@
 {
-  "name": "nb2lite-skill-claude",
-  "description": "Claude Code plugins for NB2Lite image generation: the nb2lite-image skill and nb2lite-agent MCP server for gemini-3.1-flash-lite-image.",
+  "name": "claude-gemini-image-editing",
+  "description": "Claude Code plugin for Gemini image generation and stateful editing: the gemini-image-editing skill and the gemini-image MCP server.",
   "owner": {
     "name": "tkhduracell",
     "url": "https://github.com/tkhduracell"
   },
   "plugins": [
     {
-      "name": "nb2lite-image",
+      "name": "gemini-image-editing",
       "source": "./",
-      "description": "Generate and edit images with Google's gemini-3.1-flash-lite-image (NB2Lite) via the stateful Interactions API: text-to-image, multi-turn stateful edits, and local-image editing through the nb2lite-agent MCP server."
+      "description": "Generate and edit images with Google's Gemini image models (Nano Banana 2.1, Nano Banana 2/Pro) via the stateful Interactions API: text-to-image, multi-turn stateful edits, and local-image editing through the gemini-image MCP server."
     }
   ]
 }

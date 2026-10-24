@@ -1,6 +1,6 @@
-# nb2lite-agent — build, test, and image-publishing targets.
+# gemini-image — build, test, and image-publishing targets.
 
-IMAGE   := tkhduracell/nb2lite-agent
+IMAGE   := tkhduracell/gemini-image
 # Keep VERSION in sync with "version" in .claude-plugin/plugin.json and with the
 # image tag pinned in that file's mcpServers args.
 VERSION := 0.2.0
@@ -11,7 +11,7 @@ all: help
 
 help:
 	@echo "========================================================="
-	@echo " nb2lite-agent - Makefile"
+	@echo " gemini-image - Makefile"
 	@echo "========================================================="
 	@echo "Available commands:"
 	@echo "  make install       - Install Python requirements"

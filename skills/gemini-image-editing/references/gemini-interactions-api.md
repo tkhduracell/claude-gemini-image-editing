@@ -1,6 +1,6 @@
 # 🌌 Gemini Interactions API Reference
 
-The **Interactions API** is the next-generation stateful endpoint for Gemini's multi-turn, high-efficiency models. Unlike stateless generations, interactions allow you to store and iteratively refine context—enabling stateful image editing with `gemini-3.1-flash-lite-image`. Use this guide when composing raw SDK calls without the NB2Lite MCP tools, or when answering questions about the API itself.
+The **Interactions API** is the next-generation stateful endpoint for Gemini's multi-turn, high-efficiency models. Unlike stateless generations, interactions allow you to store and iteratively refine context—enabling stateful image editing with `gemini-3.1-flash-lite-image`. Use this guide when composing raw SDK calls without the gemini-image MCP tools, or when answering questions about the API itself.
 
 ---
 

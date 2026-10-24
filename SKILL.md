@@ -1,1 +1,1 @@
-skills/nb2lite-image/SKILL.md
+skills/gemini-image-editing/SKILL.md

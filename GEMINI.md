@@ -99,10 +99,15 @@ Our server abstracts model naming using the `GEMINI_MODEL_NAME` environment vari
 
 | Model | `image_size` | `thinking_level` |
 | :--- | :--- | :--- |
-| `gemini-nano-banana-2.1` *(default)* | 1K, 2K, 4K | minimal, low, medium, high |
-| `gemini-3.1-flash-image` | 1K, 2K | minimal, low, medium, high |
-| `gemini-3-pro-image` | 1K, 2K, 4K | low, medium, high |
-| `gemini-3.1-flash-lite-image` | 1K only | low, high |
+| `gemini-nano-banana-2.1` *(default)* | 1K, 2K, 4K | minimal, medium, high |
+| `gemini-3.1-flash-image` | 1K, 2K, 4K | minimal, high |
+| `gemini-3-pro-image` | 1K, 2K, 4K | low, high |
+| `gemini-3.1-flash-lite-image` | 1K only | minimal, high |
+
+Measured against the live API, not copied from the published docs, which are
+wrong about thinking levels for every model listed. No level is universal:
+`low` is rejected by the 3.1 family and by nano-banana-2.1, while `minimal` is
+rejected by `gemini-3-pro-image`.
 
 Aspect ratios (all models): `1:1`, `3:2`, `2:3`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, `21:9`.
 
@@ -130,7 +135,7 @@ The server exposes a `get_help` tool that reports its live configuration — API
 * **Optimize Thinking Budgets**:
   * Use lower levels for ultra-fast previews and prototyping.
   * Use `'high'` when you need complex rendering, text layout accuracy, or advanced character composition.
-  * Which levels a model accepts varies — `gemini-3.1-flash-lite-image` rejects `'minimal'`/`'medium'` with HTTP 400, while `gemini-nano-banana-2.1` accepts all four.
+  * Which levels a model accepts varies, and no level works everywhere — see the table above. Omitting `thinking_level` lets the server pick one the active model accepts.
 
 ---
 
@@ -138,4 +143,4 @@ The server exposes a `get_help` tool that reports its live configuration — API
 - [Interactions API Reference Guide](https://ai.google.dev/api/interactions-api)
 - [Raw Interactions API Details](https://ai.google.dev/api/interactions.md.txt)
 - [Image generation guide](https://ai.google.dev/gemini-api/docs/interactions/image-generation) — `response_format`, sizes, aspect ratios
-- [Project repository](https://github.com/tkhduracell/nb2lite-skill-claude) — the `nb2lite-agent` MCP server ([server.py](server.py)), the `nb2lite-image` Claude Code skill ([SKILL.md](SKILL.md)), and setup docs ([README.md](README.md))
+- [Project repository](https://github.com/tkhduracell/claude-gemini-image-editing) — the `gemini-image` MCP server ([server.py](server.py)), the `gemini-image-editing` Claude Code skill ([SKILL.md](SKILL.md)), and setup docs ([README.md](README.md))

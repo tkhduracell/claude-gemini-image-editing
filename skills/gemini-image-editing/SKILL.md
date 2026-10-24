@@ -1,6 +1,6 @@
 ---
-name: nb2lite-image
-description: Generate and edit images with Google's Gemini image models (Nano Banana 2.1, Nano Banana 2/Pro, NB2Lite) via the stateful Interactions API. Use when the user asks to generate, edit, refine, or iterate on images, do multi-turn image editing with interaction IDs, edit a local image file, tune aspect ratio, image size, or thinking level, or set up/debug the NB2Lite MCP agent. Triggers include "generate an image", "edit this image", "nano banana", "nb2lite", "flash-lite-image", "Interactions API", "interaction id", "aspect ratio", "thinking level".
+name: gemini-image-editing
+description: Generate and edit images with Google's Gemini image models (Nano Banana 2.1, Nano Banana 2/Pro, Nano Banana 2 Lite) via the stateful Interactions API. Use when the user asks to generate, edit, refine, or iterate on images, do multi-turn image editing with interaction IDs, edit a local image file, tune aspect ratio, image size, or thinking level, or set up/debug the gemini-image MCP server. Triggers include "generate an image", "edit this image", "nano banana", "gemini-image", "nb2lite", "flash-lite-image", "Interactions API", "interaction id", "aspect ratio", "thinking level".
 ---
 
 # Gemini image generation & stateful editing
@@ -12,7 +12,7 @@ re-rolling the scene.
 
 Two ways to act:
 
-1. **Preferred — MCP agent tools.** If the `nb2lite-agent` MCP server is
+1. **Preferred — MCP agent tools.** If the `gemini-image` MCP server is
    connected, use its tools (catalog below). They wrap the API with per-model
    validation, mime-type detection, retries, and concurrency-safe saving.
 2. **Fallback — direct SDK.** If it is not connected, either offer to install it
@@ -50,10 +50,16 @@ Set by `GEMINI_MODEL_NAME`; default `gemini-nano-banana-2.1`.
 
 | Model | `image_size` | `thinking_level` |
 | :--- | :--- | :--- |
-| `gemini-nano-banana-2.1` *(default)* | 1K, 2K, 4K | minimal, low, medium, high |
-| `gemini-3.1-flash-image` | 1K, 2K | minimal, low, medium, high |
-| `gemini-3-pro-image` | 1K, 2K, 4K | low, medium, high |
-| `gemini-3.1-flash-lite-image` | 1K only | low, high |
+| `gemini-nano-banana-2.1` *(default)* | 1K, 2K, 4K | minimal, medium, high |
+| `gemini-3.1-flash-image` | 1K, 2K, 4K | minimal, high |
+| `gemini-3-pro-image` | 1K, 2K, 4K | low, high |
+| `gemini-3.1-flash-lite-image` | 1K only | minimal, high |
+
+These are **measured against the live API**, not copied from the docs — the
+published tables are wrong about thinking levels for every model above. No
+level works everywhere: `low` is rejected by the 3.1 family *and* by
+nano-banana-2.1, while `minimal` is rejected by `gemini-3-pro-image`. Omit
+`thinking_level` and the server picks one the active model accepts.
 
 **Aspect ratios** (all models): `1:1` (default), `3:2`, `2:3`, `3:4`, `4:3`,
 `4:5`, `5:4`, `9:16`, `16:9`, `21:9`.
@@ -89,8 +95,8 @@ Preferred — the plugin, which installs this skill *and* registers the server a
 Docker container:
 
 ```
-/plugin marketplace add tkhduracell/nb2lite-skill-claude
-/plugin install nb2lite-image@nb2lite-skill-claude
+/plugin marketplace add tkhduracell/claude-gemini-image-editing
+/plugin install gemini-image-editing@claude-gemini-image-editing
 ```
 
 Requires Docker and `GEMINI_API_KEY` exported in the environment (the manifest
@@ -100,7 +106,7 @@ Fallback — server only, no skill, no Docker:
 
 ```bash
 pip install -r requirements.txt
-claude mcp add nb2lite-agent \
+claude mcp add gemini-image \
   --env GEMINI_API_KEY=<key> \
   --env GEMINI_MODEL_NAME=gemini-nano-banana-2.1 \
   --env IMAGE_OUTPUT_DIR=./images \
@@ -108,7 +114,7 @@ claude mcp add nb2lite-agent \
 ```
 
 Then restart Claude Code and approve the server; `/mcp` should list
-`nb2lite-agent`.
+`gemini-image`.
 
 ### Configuration
 
