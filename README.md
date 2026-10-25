@@ -97,20 +97,24 @@ This is the primary path. It installs the **skill** (so the agent knows how to
 chain interaction IDs and when not to change aspect ratio) **and** registers the
 MCP server, which runs as a container.
 
-```bash
-docker pull ghcr.io/tkhduracell/gemini-image:0.2.1
-
-mkdir -p ~/.config/gemini
-printf '%s' 'YOUR_KEY_HERE' > ~/.config/gemini/api.key
-chmod 600 ~/.config/gemini/api.key
+```
+/plugin marketplace add tkhduracell/claude-gemini-image-editing
+/plugin install gemini-image-editing@claude-gemini-image-editing
+/gemini-setup-key
 ```
 
-> [!IMPORTANT]
-> Use the **key file**, not an exported environment variable. A GUI-launched
-> app — the Claude desktop app included — does not source `~/.zshrc`, so a key
-> exported there never reaches the plugin and `get_help` reports
-> `API key: Not Set`. The plugin mounts this file read-only and reads it via
-> `GEMINI_API_KEY_FILE`. An exported `GEMINI_API_KEY` still wins when present.
+That is the whole install. `/gemini-setup-key` prompts for your key (from
+[AI Studio](https://aistudio.google.com/apikey)) and stores it where the server
+looks. Restart Claude Code afterwards.
+
+> [!NOTE]
+> The key is stored in a **file**, not an environment variable, because a
+> GUI-launched app does not read `~/.zshrc` — an exported `GEMINI_API_KEY`
+> never reaches the container. The server searches `~/.config/gemini/api.key`
+> and a few other conventional paths automatically, so no configuration is
+> needed. An exported `GEMINI_API_KEY` still wins when present, and if no key
+> is found the error tells you exactly how to fix it. See
+> [docs/secrets-design.md](docs/secrets-design.md).
 
 Then in Claude Code:
 
@@ -194,7 +198,7 @@ docker run --rm -i \
   -e GEMINI_MODEL_NAME \
   -e HOST_OUTPUT_DIR="$PWD/images" \
   -v "$PWD/images:/images" \
-  ghcr.io/tkhduracell/gemini-image:0.2.1
+  ghcr.io/tkhduracell/gemini-image:0.2.2
 ```
 
 ### The output-path gotcha

@@ -88,6 +88,26 @@ Note ADC has the same container problem and the same answer: mount
 a long-lived refresh token crossing a container boundary, which is one reason
 the API-key path stays the default here.
 
+## Making it not suck to install
+
+A file the user must create by hand before the plugin works is a bad install.
+Three things move that work off the user:
+
+1. **The server searches conventional paths.** With no `GEMINI_API_KEY_FILE`
+   set it tries `/run/secrets/api.key` (the plugin mount), then
+   `~/.config/gemini/api.key`, `~/.gemini/api.key`, `~/.gemini.key`,
+   `~/gemini.key`. Dropping a key in any of them is enough.
+2. **A `/gemini-setup-key` command** writes the file with the right
+   permissions, so the user never runs `mkdir`/`chmod` themselves.
+3. **The no-key error is the instructions.** It names the command, gives the
+   manual fallback, and links to where keys come from. `get_help` lists every
+   path it searched.
+
+The manifest also mounts the config **directory**, not the key file. Bind-
+mounting a file that does not exist yet makes Docker create a *directory* at
+that path, which then shadows the real key when the user creates it - so
+install order would have mattered. Mounting the parent removes that trap.
+
 ## What this project does
 
 ```jsonc

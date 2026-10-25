@@ -194,6 +194,19 @@ class TestGeminiImageAgent(unittest.TestCase):
 class TestApiKeyResolution(unittest.TestCase):
     """GUI apps do not source shell rc files, so a key file is the fallback."""
 
+    def setUp(self):
+        # Point the default search at an empty temp dir. Without this the
+        # suite reads the developer's own ~/.config/gemini/api.key, which
+        # makes results machine-dependent and can print a real key into
+        # failure output.
+        self._tmp = tempfile.TemporaryDirectory()
+        patcher = patch.object(
+            server, "DEFAULT_KEY_PATHS", (os.path.join(self._tmp.name, "none.key"),)
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self._tmp.cleanup)
+
     def test_env_var_wins(self):
         with patch.dict(os.environ, {"GEMINI_API_KEY": "from-env"}, clear=False):
             self.assertEqual(_read_api_key(), "from-env")
@@ -249,6 +262,47 @@ class TestApiKeyResolution(unittest.TestCase):
             for v in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY_FILE"):
                 os.environ.pop(v, None)
             self.assertIsNone(_read_api_key())
+
+    def test_default_paths_searched_without_explicit_config(self):
+        """Dropping a key in a conventional location needs no configuration."""
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "api.key")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("found-by-search\n")
+            missing = os.path.join(d, "absent.key")
+            with (
+                patch.object(server, "DEFAULT_KEY_PATHS", (missing, p)),
+                patch.dict(os.environ, {}, clear=False),
+            ):
+                for v in (
+                    "GEMINI_API_KEY",
+                    "GOOGLE_API_KEY",
+                    "GEMINI_API_KEY_FILE",
+                ):
+                    os.environ.pop(v, None)
+                self.assertEqual(_read_api_key(), "found-by-search")
+
+    def test_missing_default_path_is_not_an_error(self):
+        """A missing default path just means the key lives elsewhere."""
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.object(server, "DEFAULT_KEY_PATHS", (os.path.join(d, "nope.key"),)),
+            patch.dict(os.environ, {}, clear=False),
+        ):
+            for v in (
+                "GEMINI_API_KEY",
+                "GOOGLE_API_KEY",
+                "GEMINI_API_KEY_FILE",
+            ):
+                os.environ.pop(v, None)
+            self.assertIsNone(_read_api_key())
+
+    def test_no_key_message_is_actionable(self):
+        """The error a new user hits must say how to fix it."""
+        msg = server.NO_KEY_MESSAGE
+        self.assertIn("/gemini-setup-key", msg)
+        self.assertIn("~/.config/gemini/api.key", msg)
+        self.assertIn("aistudio.google.com/apikey", msg)
 
 
 class TestValidation(unittest.TestCase):
@@ -601,16 +655,24 @@ class TestClientConfiguration(unittest.TestCase):
         self.assertNotIn("enterprise", kwargs)
 
     def test_missing_credentials_raises(self):
-        with patch.dict(os.environ, {}, clear=False):
+        # DEFAULT_KEY_PATHS is redirected at an empty dir so the test does not
+        # pick up the developer's own key file and pass spuriously.
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.object(server, "DEFAULT_KEY_PATHS", (os.path.join(d, "none.key"),)),
+            patch.dict(os.environ, {}, clear=False),
+        ):
             for var in (
                 "GEMINI_API_KEY",
                 "GOOGLE_API_KEY",
+                "GEMINI_API_KEY_FILE",
                 "GOOGLE_GENAI_USE_ENTERPRISE",
             ):
                 os.environ.pop(var, None)
             with self.assertRaises(ValueError) as ctx:
                 server._get_client()
-        self.assertIn("GEMINI_API_KEY", str(ctx.exception))
+        # The message must tell the user what to do, not just what went wrong.
+        self.assertIn("/gemini-setup-key", str(ctx.exception))
 
     def test_enterprise_path_uses_enterprise_flag(self):
         """Verified: the Interactions API enterprise path uses enterprise=True,

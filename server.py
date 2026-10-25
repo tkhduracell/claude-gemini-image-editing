@@ -171,6 +171,50 @@ def _http_options() -> dict[str, Any]:
     }
 
 
+# Conventional places a key file may live, searched in order when no explicit
+# GEMINI_API_KEY_FILE is set. Inside the container these are the mount points
+# the plugin manifest provides; on a bare host they are where a user would
+# plausibly have put a key already. Searching them means a working install
+# needs no configuration beyond dropping the key somewhere sensible.
+DEFAULT_KEY_PATHS = (
+    "/run/secrets/api.key",  # the plugin mount (dir mounted, file inside)
+    "~/.config/gemini/api.key",
+    "~/.gemini/api.key",
+    "~/.gemini.key",
+    "~/gemini.key",
+)
+
+
+# Shown whenever no key is found. It is deliberately a set of instructions
+# rather than a description of the problem: this error is the first thing a
+# new user hits, and the cause (GUI apps not reading shell rc files) is not
+# something they can be expected to guess.
+NO_KEY_MESSAGE = (
+    "No Gemini API key found.\n"
+    "\n"
+    "Fix it by running /gemini-setup-key, or by hand:\n"
+    "    mkdir -p ~/.config/gemini && chmod 700 ~/.config/gemini\n"
+    "    printf '%s' 'YOUR_KEY' > ~/.config/gemini/api.key\n"
+    "    chmod 600 ~/.config/gemini/api.key\n"
+    "Then restart Claude Code. Get a key at https://aistudio.google.com/apikey\n"
+    "\n"
+    "A key file is used rather than an environment variable because GUI-"
+    "launched apps do not read ~/.zshrc, so an exported GEMINI_API_KEY never "
+    "reaches this server. Setting GEMINI_API_KEY in the environment does work "
+    "when it is actually present, and takes precedence.\n"
+    "\n"
+    "Alternatively set GOOGLE_GENAI_USE_ENTERPRISE=1 with GOOGLE_CLOUD_PROJECT "
+    "to authenticate with Application Default Credentials instead."
+)
+
+
+def _candidate_key_paths() -> list[str]:
+    """Key-file paths to try, most explicit first."""
+    explicit = os.environ.get("GEMINI_API_KEY_FILE")
+    paths = [explicit] if explicit else list(DEFAULT_KEY_PATHS)
+    return [os.path.expanduser(p) for p in paths]
+
+
 def _read_api_key() -> str | None:
     """Find the API key: env var first, then a key file.
 
@@ -179,21 +223,31 @@ def _read_api_key() -> str | None:
     there never reaches a server the app spawns. A file is readable either way,
     and bind-mounting it into the container keeps the key out of the process
     environment, the plugin manifest and git.
+
+    With no GEMINI_API_KEY_FILE set, DEFAULT_KEY_PATHS are tried in order, so
+    dropping a key in a conventional location is enough - no configuration.
     """
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if key:
         return key.strip() or None
 
-    path = os.environ.get("GEMINI_API_KEY_FILE")
-    if not path:
-        return None
-    try:
-        with open(path, encoding="utf-8") as f:
-            return f.read().strip() or None
-    except OSError as e:
-        # A configured-but-unreadable key file is a misconfiguration worth
-        # surfacing, not something to silently fall through on.
-        raise ValueError(f"GEMINI_API_KEY_FILE '{path}' could not be read: {e}") from e
+    explicit = os.environ.get("GEMINI_API_KEY_FILE")
+    for path in _candidate_key_paths():
+        try:
+            with open(path, encoding="utf-8") as f:
+                found = f.read().strip()
+        except OSError as e:
+            # An explicitly configured but unreadable file is a
+            # misconfiguration worth surfacing. A missing default path is
+            # not - it just means the key lives somewhere else.
+            if explicit:
+                raise ValueError(
+                    f"GEMINI_API_KEY_FILE '{path}' could not be read: {e}"
+                ) from e
+            continue
+        if found:
+            return found
+    return None
 
 
 def _get_client() -> genai.Client:
@@ -229,14 +283,7 @@ def _get_client() -> genai.Client:
         else:
             api_key = _read_api_key()
             if not api_key:
-                raise ValueError(
-                    "No Gemini API key. Set GEMINI_API_KEY (or GOOGLE_API_KEY), "
-                    "or GEMINI_API_KEY_FILE pointing at a file containing the "
-                    "key, or GOOGLE_GENAI_USE_ENTERPRISE=1 with ADC. "
-                    "Note: GUI apps do not read ~/.zshrc, so an env var "
-                    "exported there will not reach this server - use the key "
-                    "file instead."
-                )
+                raise ValueError(NO_KEY_MESSAGE)
             client = genai.Client(
                 api_key=api_key, http_options=cast(Any, _http_options())
             )
@@ -619,26 +666,28 @@ def get_help() -> str:
             f"location: `{os.environ.get('GOOGLE_CLOUD_LOCATION', 'global')}`)"
         )
     else:
+        # Report what resolution actually does, by running it - an earlier
+        # version duplicated the logic here and silently disagreed with it.
         if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
             auth_status = "API key: `Set` (from the environment)"
-        elif os.environ.get("GEMINI_API_KEY_FILE"):
+        else:
             try:
-                found = bool(_read_api_key())
+                found = _read_api_key()
             except ValueError as e:
                 auth_status = f"API key: `Not Set` - {e}"
             else:
-                auth_status = (
-                    "API key: `Set` (from `GEMINI_API_KEY_FILE`)"
-                    if found
-                    else "API key: `Not Set` - `GEMINI_API_KEY_FILE` is empty"
-                )
-        else:
-            auth_status = (
-                "API key: `Not Set` - set `GEMINI_API_KEY`, or "
-                "`GEMINI_API_KEY_FILE` pointing at a file holding the key. "
-                "A GUI-launched app does not read `~/.zshrc`, so a key "
-                "exported there never reaches this server."
-            )
+                if found:
+                    src = os.environ.get("GEMINI_API_KEY_FILE") or next(
+                        (p for p in _candidate_key_paths() if os.path.exists(p)),
+                        "a key file",
+                    )
+                    auth_status = f"API key: `Set` (from `{src}`)"
+                else:
+                    searched = ", ".join(f"`{p}`" for p in _candidate_key_paths())
+                    auth_status = (
+                        f"API key: `Not Set` - run `/gemini-setup-key`. "
+                        f"Searched: {searched}."
+                    )
     image_output_dir = os.environ.get("IMAGE_OUTPUT_DIR", ".")
     host_output_dir = os.environ.get("HOST_OUTPUT_DIR")
     caps = MODEL_CAPS.get(MODEL_NAME)
