@@ -158,3 +158,32 @@ Deliberate details:
   since it is read at client construction.
 - **Cloud/CI.** Use the platform's secret store, which injects an env var. That
   path is already supported and takes precedence.
+
+## The remaining ceiling: elicitation
+
+Even with a one-command setup, the user still performs a step before the tool
+works. MCP 2.x offers a way to remove it entirely: **elicitation**
+(`ElicitRequest` / `ElicitResult` in `mcp.types`) lets a *server* ask the
+*client* to prompt the user, mid-session.
+
+That changes the shape of the problem. Instead of failing with instructions,
+the server would, on finding no key:
+
+1. Send an `ElicitRequest` asking for the API key.
+2. Receive it through `ElicitResult`.
+3. Use it for the session, and offer to persist it.
+
+Install becomes `/plugin install`, and the first image request asks for a key
+inline — no slash command, no file, no docs step.
+
+Two things to settle before building it:
+
+- **Persistence.** The container is `--rm` and mounts the config directory
+  `:ro`, so it cannot save the key itself. Either the mount becomes writable
+  (widening what the container can touch) or the client persists it. The
+  read-only mount is deliberate, so this needs thought rather than a flag flip.
+- **Client support.** Elicitation is capability-negotiated: a client that does
+  not advertise it gets no prompt. The current behaviour — search paths, then
+  an error that explains the fix — stays as the fallback either way.
+
+Worth doing, and strictly better than what is here now. Not done yet.
