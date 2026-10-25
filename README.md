@@ -103,6 +103,7 @@ export GEMINI_API_KEY="$(cat ~/gemini.key)"   # or however you store it
 
 Then in Claude Code:
 
+
 ```
 /plugin marketplace add tkhduracell/claude-gemini-image-editing
 /plugin install gemini-image-editing@claude-gemini-image-editing
@@ -308,6 +309,7 @@ fork PRs.
 
 - [SKILL.md](SKILL.md) — the skill: workflow, tool catalog, best practices
 - [GEMINI.md](GEMINI.md) — Interactions API developer guide
+- [INSTALL-VERIFIED.md](INSTALL-VERIFIED.md) — step-by-step install walkthrough with recorded output, plus troubleshooting
 - [MODERNIZATION.md](MODERNIZATION.md) — what changed in this fork and why
 - [CLAUDE.md](CLAUDE.md) — guidance for Claude Code working in this repo
 - [Interactions API reference](https://ai.google.dev/api/interactions-api) · [image generation](https://ai.google.dev/gemini-api/docs/interactions/image-generation)
