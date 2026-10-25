@@ -320,6 +320,7 @@ fork PRs.
 
 - [SKILL.md](SKILL.md) — the skill: workflow, tool catalog, best practices
 - [GEMINI.md](GEMINI.md) — Interactions API developer guide
+- [docs/secrets-design.md](docs/secrets-design.md) — why the key is a mounted file and not an env var or OAuth
 - [INSTALL-VERIFIED.md](INSTALL-VERIFIED.md) — step-by-step install walkthrough with recorded output, plus troubleshooting
 - [MODERNIZATION.md](MODERNIZATION.md) — what changed in this fork and why
 - [CLAUDE.md](CLAUDE.md) — guidance for Claude Code working in this repo
