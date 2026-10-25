@@ -186,7 +186,9 @@ pin `mcp>=2.3.0,<3` is load-bearing — 1.x will not import this server.
 
 - Prefer the standard library; do not assume third-party libraries are
   installed, and do not add dependencies for convenience.
-- Keep `ruff check` and `ruff format` clean.
+- Keep `ruff check` and `ruff format` clean. CI pins **ruff 0.17.2** — match it
+  locally (`pip install 'ruff==0.17.2'`), since a newer ruff adds rules and an
+  older one misses them, and either way local and CI disagree.
 - Tests must not make network calls.
 
 ## Related documentation

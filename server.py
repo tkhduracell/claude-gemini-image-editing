@@ -1,11 +1,12 @@
-import os
 import base64
-import time
 import logging
 import mimetypes
-import uuid
+import os
 import sys
+import time
+import uuid
 from typing import Any, cast
+
 from google import genai
 from mcp.server.mcpserver import MCPServer
 
@@ -267,13 +268,16 @@ def _validate_inputs(
                 f"'{image_size}'. Supported: {', '.join(sorted(caps['sizes']))}"
             )
 
-    if thinking_level and caps is not None:
-        if thinking_level.lower() not in caps["thinking"]:
-            raise ValueError(
-                f"Model '{model_name}' does not support thinking level "
-                f"'{thinking_level}'. Supported levels: "
-                f"{', '.join(sorted(caps['thinking']))}"
-            )
+    if (
+        thinking_level
+        and caps is not None
+        and thinking_level.lower() not in caps["thinking"]
+    ):
+        raise ValueError(
+            f"Model '{model_name}' does not support thinking level "
+            f"'{thinking_level}'. Supported levels: "
+            f"{', '.join(sorted(caps['thinking']))}"
+        )
 
 
 def _build_response_format(

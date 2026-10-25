@@ -1,7 +1,7 @@
 import asyncio
-import unittest
 import os
 import tempfile
+import unittest
 from unittest.mock import MagicMock, patch
 
 # Import functions to test from server
@@ -483,9 +483,11 @@ class TestInputSizeCap(unittest.TestCase):
             path = os.path.join(d, "big.png")
             with open(path, "wb") as f:
                 f.write(b"\x00" * (2 * 1024 * 1024))  # 2 MB
-            with patch.dict(os.environ, {"MAX_INPUT_IMAGE_MB": "1"}, clear=False):
-                with self.assertRaises(ValueError) as ctx:
-                    _get_image_data(path)
+            with (
+                patch.dict(os.environ, {"MAX_INPUT_IMAGE_MB": "1"}, clear=False),
+                self.assertRaises(ValueError) as ctx,
+            ):
+                _get_image_data(path)
         msg = str(ctx.exception)
         self.assertIn("too large", msg)
         self.assertIn("MAX_INPUT_IMAGE_MB", msg)
@@ -506,9 +508,11 @@ class TestInputSizeCap(unittest.TestCase):
             path = os.path.join(d, "big.png")
             with open(path, "wb") as f:
                 f.write(b"\x00" * (2 * 1024 * 1024))
-            with patch.dict(os.environ, {"MAX_INPUT_IMAGE_MB": "1"}, clear=False):
-                with self.assertRaises(ToolError) as ctx:
-                    edit_local_image(image_path=path, edit_prompt="e")
+            with (
+                patch.dict(os.environ, {"MAX_INPUT_IMAGE_MB": "1"}, clear=False),
+                self.assertRaises(ToolError) as ctx,
+            ):
+                edit_local_image(image_path=path, edit_prompt="e")
         self.assertIn("too large", str(ctx.exception))
 
     def test_default_cap_is_20_mb(self):
@@ -555,9 +559,11 @@ class TestClientConfiguration(unittest.TestCase):
             "GOOGLE_CLOUD_PROJECT": "your-project-id",
             "GOOGLE_CLOUD_LOCATION": "global",
         }
-        with patch.dict(os.environ, env, clear=False):
-            with patch("server.genai.Client") as mock_cls:
-                server._get_client()
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch("server.genai.Client") as mock_cls,
+        ):
+            server._get_client()
         kwargs = mock_cls.call_args.kwargs
         self.assertIs(kwargs["enterprise"], True)
         self.assertNotIn("vertexai", kwargs)
@@ -646,9 +652,11 @@ class TestClientConfiguration(unittest.TestCase):
             "GOOGLE_GENAI_USE_ENTERPRISE": "1",
             "GOOGLE_CLOUD_PROJECT": "your-project-id",
         }
-        with patch.dict(os.environ, env, clear=False):
-            with patch("server.genai.Client") as mock_cls:
-                server._get_client()
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch("server.genai.Client") as mock_cls,
+        ):
+            server._get_client()
         http_options = mock_cls.call_args.kwargs["http_options"]
         self.assertEqual(http_options["timeout"], 120_000)
         self.assertIn("retry_options", http_options)
