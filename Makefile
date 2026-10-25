@@ -1,6 +1,6 @@
 # gemini-image — build, test, and image-publishing targets.
 
-IMAGE   := tkhduracell/gemini-image
+IMAGE   := ghcr.io/tkhduracell/gemini-image
 # Keep VERSION in sync with "version" in .claude-plugin/plugin.json and with the
 # image tag pinned in that file's mcpServers args.
 VERSION := 0.2.0

@@ -25,7 +25,7 @@
         "HOST_OUTPUT_DIR",
         "-v",
         "${CLAUDE_PROJECT_DIR}/images:/images",
-        "tkhduracell/gemini-image:0.2.0"
+        "ghcr.io/tkhduracell/gemini-image:0.2.0"
       ]
     }
   }

@@ -97,7 +97,7 @@ chain interaction IDs and when not to change aspect ratio) **and** registers the
 MCP server, which runs as a container.
 
 ```bash
-docker pull tkhduracell/gemini-image:0.2.0
+docker pull ghcr.io/tkhduracell/gemini-image:0.2.0
 export GEMINI_API_KEY="$(cat ~/gemini.key)"   # or however you store it
 ```
 
@@ -164,10 +164,14 @@ on the project.
 
 ## 🐳 Docker
 
-Published as `tkhduracell/gemini-image`. The image contains only `server.py`
-and its pinned dependencies — no keys, no Claude Code. `.dockerignore` is
-deny-all-then-allow, so `.env`, `.mcp.json`, and key files cannot enter the
-build context.
+Published to the **GitHub Container Registry** as
+`ghcr.io/tkhduracell/gemini-image`, built and pushed by CI on a `v*` tag. GHCR
+authenticates with the workflow's built-in `GITHUB_TOKEN`, so there is no
+registry secret to configure and a fork publishes to its own namespace.
+
+The image contains only `server.py` and its pinned dependencies — no keys, no
+Claude Code. `.dockerignore` is deny-all-then-allow, so `.env`, `.mcp.json`, and
+key files cannot enter the build context.
 
 It runs as **uid 1000**, not root, so images written through a bind mount are
 not root-owned on the host.
@@ -178,7 +182,7 @@ docker run --rm -i \
   -e GEMINI_MODEL_NAME \
   -e HOST_OUTPUT_DIR="$PWD/images" \
   -v "$PWD/images:/images" \
-  tkhduracell/gemini-image:0.2.0
+  ghcr.io/tkhduracell/gemini-image:0.2.0
 ```
 
 ### The output-path gotcha
@@ -292,7 +296,7 @@ Dependabot watches pip, GitHub Actions, and the Docker base image weekly.
 | Workflow | Trigger |
 | :--- | :--- |
 | `ci.yml` | Push/PR — lint, tests on Python 3.10–3.13, manifest validation. |
-| `docker.yml` | PR builds amd64; a `v*` tag builds multi-arch and pushes. |
+| `docker.yml` | PR builds amd64; a `v*` tag builds multi-arch and pushes to GHCR. |
 | `model-drift.yml` | Weekly — flags a vanished default model. |
 
 Secret-dependent jobs skip cleanly on a fork with no secrets, and never run on

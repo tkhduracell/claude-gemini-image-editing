@@ -62,7 +62,7 @@ The manifest passes `-e GEMINI_API_KEY` **by name with no value** on purpose:
 Docker inherits it from the environment, so the key never enters the manifest or
 git. Do not "fix" this by adding a value.
 
-Image: `tkhduracell/gemini-image`. `VERSION` in the `Makefile` must match
+Image: `ghcr.io/tkhduracell/gemini-image`. `VERSION` in the `Makefile` must match
 `version` in `plugin.json` **and** the tag pinned in its `args` — CI enforces the
 first two.
 
