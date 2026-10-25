@@ -3,7 +3,7 @@
 IMAGE   := ghcr.io/tkhduracell/gemini-image
 # Keep VERSION in sync with "version" in .claude-plugin/plugin.json and with the
 # image tag pinned in that file's mcpServers args.
-VERSION := 0.2.0
+VERSION := 0.2.1
 
 .PHONY: all help install run test lint clean docker-build docker-buildx docker-push validate
 

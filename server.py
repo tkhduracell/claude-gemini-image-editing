@@ -171,6 +171,31 @@ def _http_options() -> dict[str, Any]:
     }
 
 
+def _read_api_key() -> str | None:
+    """Find the API key: env var first, then a key file.
+
+    The file fallback exists because GUI-launched apps (the Claude desktop app
+    among them) do not source ~/.zshrc or ~/.bash_profile, so a key exported
+    there never reaches a server the app spawns. A file is readable either way,
+    and bind-mounting it into the container keeps the key out of the process
+    environment, the plugin manifest and git.
+    """
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if key:
+        return key.strip() or None
+
+    path = os.environ.get("GEMINI_API_KEY_FILE")
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError as e:
+        # A configured-but-unreadable key file is a misconfiguration worth
+        # surfacing, not something to silently fall through on.
+        raise ValueError(f"GEMINI_API_KEY_FILE '{path}' could not be read: {e}") from e
+
+
 def _get_client() -> genai.Client:
     """Helper to lazily initialize or retrieve the Gemini Client.
 
@@ -202,13 +227,15 @@ def _get_client() -> genai.Client:
                 http_options=cast(Any, _http_options()),
             )
         else:
-            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get(
-                "GOOGLE_API_KEY"
-            )
+            api_key = _read_api_key()
             if not api_key:
                 raise ValueError(
-                    "Set GEMINI_API_KEY (or GOOGLE_API_KEY), or "
-                    "GOOGLE_GENAI_USE_ENTERPRISE=1 with ADC."
+                    "No Gemini API key. Set GEMINI_API_KEY (or GOOGLE_API_KEY), "
+                    "or GEMINI_API_KEY_FILE pointing at a file containing the "
+                    "key, or GOOGLE_GENAI_USE_ENTERPRISE=1 with ADC. "
+                    "Note: GUI apps do not read ~/.zshrc, so an env var "
+                    "exported there will not reach this server - use the key "
+                    "file instead."
                 )
             client = genai.Client(
                 api_key=api_key, http_options=cast(Any, _http_options())
@@ -592,11 +619,26 @@ def get_help() -> str:
             f"location: `{os.environ.get('GOOGLE_CLOUD_LOCATION', 'global')}`)"
         )
     else:
-        auth_status = (
-            "API key: `Set`"
-            if (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
-            else "API key: `Not Set`"
-        )
+        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+            auth_status = "API key: `Set` (from the environment)"
+        elif os.environ.get("GEMINI_API_KEY_FILE"):
+            try:
+                found = bool(_read_api_key())
+            except ValueError as e:
+                auth_status = f"API key: `Not Set` - {e}"
+            else:
+                auth_status = (
+                    "API key: `Set` (from `GEMINI_API_KEY_FILE`)"
+                    if found
+                    else "API key: `Not Set` - `GEMINI_API_KEY_FILE` is empty"
+                )
+        else:
+            auth_status = (
+                "API key: `Not Set` - set `GEMINI_API_KEY`, or "
+                "`GEMINI_API_KEY_FILE` pointing at a file holding the key. "
+                "A GUI-launched app does not read `~/.zshrc`, so a key "
+                "exported there never reaches this server."
+            )
     image_output_dir = os.environ.get("IMAGE_OUTPUT_DIR", ".")
     host_output_dir = os.environ.get("HOST_OUTPUT_DIR")
     caps = MODEL_CAPS.get(MODEL_NAME)
@@ -617,6 +659,8 @@ def get_help() -> str:
         "#### ⚙️ Configuration Options (Environment Variables)\n"
         "- **`GEMINI_API_KEY` / `GOOGLE_API_KEY`**: API keys used to authenticate with Gemini.\n"
         f"  - *Current Auth:* {auth_status}\n"
+        "- **`GEMINI_API_KEY_FILE`**: Path to a file containing the key, used when the env vars are unset. Preferred when the server is launched by a GUI app (which does not source shell rc files) - bind-mount the file into the container.\n"
+        f"  - *Current Value:* `{os.environ.get('GEMINI_API_KEY_FILE') or 'Not Set'}`\n"
         "- **`GOOGLE_GENAI_USE_ENTERPRISE`**: Set to `1`/`true`/`yes` to authenticate with Application Default Credentials instead of an API key. Requires **`GOOGLE_CLOUD_PROJECT`** (e.g. `your-project-id`); **`GOOGLE_CLOUD_LOCATION`** defaults to `global`.\n"
         f"  - *Current Value:* `{'enabled' if enterprise else 'disabled'}`\n"
         "  - *Caveat:* image output over the enterprise path is **not documented by Google and unverified**. The API-key path is the supported default.\n"
@@ -645,7 +689,7 @@ def get_help() -> str:
         "  - *Arguments*:\n"
         "    - `prompt` (str, required): Natural language description of the image.\n"
         "    - `aspect_ratio` (str, optional): Output ratio (default: `'1:1'`).\n"
-        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'low'`).\n"
+        "    - `thinking_level` (str, optional): Latency vs. quality steps. Omit it and the server picks a level the active model accepts.\n"
         "    - `image_size` (str, optional): `1K`/`2K`/`4K`, model-dependent.\n"
         "    - `mime_type` (str, optional): `image/png` or `image/jpeg`.\n"
         "    - `store` (bool, optional): Persist context for later stateful edits (default: `True`).\n"
@@ -653,14 +697,14 @@ def get_help() -> str:
         "  - *Arguments*:\n"
         "    - `previous_interaction_id` (str, required): The unique interaction ID returned from the previous turn.\n"
         "    - `edit_prompt` (str, required): Natural language description of changes/additions to apply.\n"
-        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'low'`).\n"
+        "    - `thinking_level` (str, optional): Latency vs. quality steps. Omit it and the server picks a level the active model accepts.\n"
         "    - `image_size` (str, optional): `1K`/`2K`/`4K`, model-dependent.\n"
         "- **`edit_local_image`**: Uploads a local image file in-line via Base64 and describes edits to apply.\n"
         "  - *Arguments*:\n"
         "    - `image_path` (str, required): Path to the local image file.\n"
         "    - `edit_prompt` (str, required): Natural language description of modifications to apply.\n"
         "    - `aspect_ratio` (str, optional): Output ratio (default: `'1:1'`).\n"
-        "    - `thinking_level` (str, optional): Latency vs. quality steps (default: `'low'`).\n"
+        "    - `thinking_level` (str, optional): Latency vs. quality steps. Omit it and the server picks a level the active model accepts.\n"
         "    - `image_size` (str, optional): `1K`/`2K`/`4K`, model-dependent.\n"
         "    - `mime_type` (str, optional): `image/png` or `image/jpeg`.\n"
         "    - `store` (bool, optional): Persist context for later stateful edits (default: `True`).\n"

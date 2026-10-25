@@ -120,7 +120,7 @@ mcp>=2.3.0,<3
 Build multi-arch so it runs natively on your Mac and on amd64 CI:
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t <you>/gemini-image:0.2.0 --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t <you>/gemini-image:0.2.1 --push .
 ```
 
 ### Registering the Docker server with Claude Code
@@ -137,7 +137,7 @@ claude mcp add gemini-image \
   -- docker run --rm -i \
        -e GEMINI_API_KEY -e GEMINI_MODEL_NAME -e IMAGE_OUTPUT_DIR \
        -v "$PWD/images:/images" \
-       <you>/gemini-image:0.2.0
+       <you>/gemini-image:0.2.1
 ```
 
 One caveat worth handling explicitly: the server returns
@@ -184,7 +184,7 @@ the server reads `GEMINI_API_KEY` from the environment. Point it at Docker:
         "-e", "GEMINI_API_KEY",
         "-e", "GEMINI_MODEL_NAME",
         "-v", "${CLAUDE_PROJECT_DIR}/images:/images",
-        "<you>/gemini-image:0.2.0"
+        "<you>/gemini-image:0.2.1"
       ]
     }
   }

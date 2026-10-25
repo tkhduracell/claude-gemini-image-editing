@@ -1,7 +1,7 @@
 # Plugin install — verified walkthrough
 
 Every step below was executed on 2026-10-25 against the published
-`ghcr.io/tkhduracell/gemini-image:0.2.0`, with the actual output recorded. This
+`ghcr.io/tkhduracell/gemini-image:0.2.1`, with the actual output recorded. This
 is not a dry run written from the docs.
 
 ## Prerequisites
@@ -12,25 +12,35 @@ is not a dry run written from the docs.
   credits authenticates fine and lists models, but every generation returns
   `HTTP 402 — prepayment credits are depleted`.
 
-## 1. Export the key
+## 1. Store the API key
 
 ```bash
-export GEMINI_API_KEY="$(cat ~/gemini.key)"   # or however you store it
+mkdir -p ~/.config/gemini
+printf '%s' 'YOUR_KEY_HERE' > ~/.config/gemini/api.key
+chmod 600 ~/.config/gemini/api.key
 ```
 
-This must be exported in the environment Claude Code is launched from. The
-plugin manifest passes `-e GEMINI_API_KEY` **by name with no value**, so Docker
-copies it in from the caller's environment and the key never touches the
-manifest or git.
+**Use the key file, not an environment variable.** The plugin mounts this file
+read-only into the container and reads it via `GEMINI_API_KEY_FILE`.
 
-> Verified: a container started this way reported `key seen: YES (len 17)` for a
-> probe value, and `GEMINI_MODEL_NAME` came through the same way. An unset
-> `HOST_OUTPUT_DIR` is handled safely rather than erroring.
+A GUI-launched app — the Claude desktop app included — does **not** source
+`~/.zshrc` or `~/.bash_profile`. A key exported there is invisible to the
+plugin, which then reports `API key: Not Set` even though your terminal has it.
+The file works for both.
+
+An exported `GEMINI_API_KEY` still takes precedence when present, so a
+terminal-launched Claude Code keeps working as before.
+
+> Verified: with `GEMINI_API_KEY` and `GOOGLE_API_KEY` stripped from the
+> environment, a headless `claude -p` run reported
+> `Current Auth: API key: `Set` (from `GEMINI_API_KEY_FILE`)`. `${HOME}`
+> expands correctly in the manifest, and an unset `HOST_OUTPUT_DIR` is handled
+> safely rather than erroring.
 
 ## 2. Pull the image (optional)
 
 ```bash
-docker pull ghcr.io/tkhduracell/gemini-image:0.2.0
+docker pull ghcr.io/tkhduracell/gemini-image:0.2.1
 ```
 
 Optional — Docker pulls on first run. Doing it up front turns a slow first
@@ -78,7 +88,7 @@ claude mcp list
 > ```
 > plugin:gemini-image-editing:gemini-image: docker run --rm -i -e GEMINI_API_KEY
 >   -e GEMINI_MODEL_NAME -e HOST_OUTPUT_DIR -v /your/project/images:/images
->   ghcr.io/tkhduracell/gemini-image:0.2.0 - ✔ Connected
+>   ghcr.io/tkhduracell/gemini-image:0.2.1 - ✔ Connected
 > ```
 
 Two things this confirms beyond "it starts": `${CLAUDE_PROJECT_DIR}` expanded to
@@ -131,8 +141,8 @@ text that looks like success.
 
 | Symptom | Cause |
 | :--- | :--- |
-| Server fails at startup | Docker not running, or the image cannot be pulled. Try `docker pull ghcr.io/tkhduracell/gemini-image:0.2.0` directly. |
-| `get_help` reports no key | `GEMINI_API_KEY` was not exported in the environment Claude Code was launched from. Export it and restart Claude Code — the server reads it at process start. |
+| Server fails at startup | Docker not running, or the image cannot be pulled. Try `docker pull ghcr.io/tkhduracell/gemini-image:0.2.1` directly. |
+| `get_help` reports no key | The key file is missing or empty. GUI apps do not read `~/.zshrc`, so an exported env var does not reach the plugin — create `~/.config/gemini/api.key` as in step 1 and restart Claude Code. |
 | `HTTP 402 … prepayment credits are depleted` | Account-level billing, not a bug. Affects text calls too. Top up at the `ai.studio/projects` link in the error. |
 | `HTTP 400 … thinking level X is not supported` | That level is not valid for the active model. See the table above, or omit `thinking_level`. |
 | `Unsupported image size '1k'` | Uppercase `K` is required. |

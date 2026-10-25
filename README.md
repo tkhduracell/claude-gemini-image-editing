@@ -78,6 +78,7 @@ nano-banana-2.1, while `minimal` is rejected by `gemini-3-pro-image`. Omit
 | `GOOGLE_API_KEY` | Fallback if `GEMINI_API_KEY` is unset. | *optional* |
 | `GEMINI_MODEL_NAME` | Model to use (see table above). | `gemini-nano-banana-2.1` |
 | `IMAGE_OUTPUT_DIR` | Where images are written. | `.` |
+| `GEMINI_API_KEY_FILE` | Path to a file holding the key, used when the env vars are unset. Preferred for GUI-launched apps. | *unset* |
 | `HOST_OUTPUT_DIR` | **Display only.** The host path that `IMAGE_OUTPUT_DIR` is mounted from, so reported paths are ones you can actually open. See [Docker](#-docker). | *unset* |
 | `GEMINI_TIMEOUT_SECONDS` | Per-request timeout. | `120` |
 | `GEMINI_RETRY_ATTEMPTS` | Retries on 429/5xx, with exponential backoff. | `3` |
@@ -97,9 +98,19 @@ chain interaction IDs and when not to change aspect ratio) **and** registers the
 MCP server, which runs as a container.
 
 ```bash
-docker pull ghcr.io/tkhduracell/gemini-image:0.2.0
-export GEMINI_API_KEY="$(cat ~/gemini.key)"   # or however you store it
+docker pull ghcr.io/tkhduracell/gemini-image:0.2.1
+
+mkdir -p ~/.config/gemini
+printf '%s' 'YOUR_KEY_HERE' > ~/.config/gemini/api.key
+chmod 600 ~/.config/gemini/api.key
 ```
+
+> [!IMPORTANT]
+> Use the **key file**, not an exported environment variable. A GUI-launched
+> app — the Claude desktop app included — does not source `~/.zshrc`, so a key
+> exported there never reaches the plugin and `get_help` reports
+> `API key: Not Set`. The plugin mounts this file read-only and reads it via
+> `GEMINI_API_KEY_FILE`. An exported `GEMINI_API_KEY` still wins when present.
 
 Then in Claude Code:
 
@@ -183,7 +194,7 @@ docker run --rm -i \
   -e GEMINI_MODEL_NAME \
   -e HOST_OUTPUT_DIR="$PWD/images" \
   -v "$PWD/images:/images" \
-  ghcr.io/tkhduracell/gemini-image:0.2.0
+  ghcr.io/tkhduracell/gemini-image:0.2.1
 ```
 
 ### The output-path gotcha

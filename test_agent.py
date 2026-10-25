@@ -15,6 +15,7 @@ from server import (
     _extension_for,
     _get_image_data,
     _handle_response,
+    _read_api_key,
     _resolve_thinking,
     _validate_inputs,
     edit_image,
@@ -188,6 +189,66 @@ class TestGeminiImageAgent(unittest.TestCase):
         result = get_help()
         self.assertIn("enabled", result)
         self.assertIn("your-project-id", result)
+
+
+class TestApiKeyResolution(unittest.TestCase):
+    """GUI apps do not source shell rc files, so a key file is the fallback."""
+
+    def test_env_var_wins(self):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "from-env"}, clear=False):
+            self.assertEqual(_read_api_key(), "from-env")
+
+    def test_google_api_key_fallback(self):
+        env = {"GOOGLE_API_KEY": "from-google"}
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("GEMINI_API_KEY", None)
+            self.assertEqual(_read_api_key(), "from-google")
+
+    def test_reads_key_file_when_env_unset(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "api.key")
+            # trailing newline is normal for a file written by echo/printf
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("key-from-file\n")
+            with patch.dict(os.environ, {"GEMINI_API_KEY_FILE": p}, clear=False):
+                os.environ.pop("GEMINI_API_KEY", None)
+                os.environ.pop("GOOGLE_API_KEY", None)
+                self.assertEqual(_read_api_key(), "key-from-file")
+
+    def test_env_var_beats_key_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "api.key")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("from-file")
+            env = {"GEMINI_API_KEY": "from-env", "GEMINI_API_KEY_FILE": p}
+            with patch.dict(os.environ, env, clear=False):
+                self.assertEqual(_read_api_key(), "from-env")
+
+    def test_empty_key_file_is_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "api.key")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("   \n")
+            with patch.dict(os.environ, {"GEMINI_API_KEY_FILE": p}, clear=False):
+                os.environ.pop("GEMINI_API_KEY", None)
+                os.environ.pop("GOOGLE_API_KEY", None)
+                self.assertIsNone(_read_api_key())
+
+    def test_unreadable_key_file_raises(self):
+        """A configured-but-missing file is a misconfiguration, not a fallthrough."""
+        env = {"GEMINI_API_KEY_FILE": "/nonexistent/path/api.key"}
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("GEMINI_API_KEY", None)
+            os.environ.pop("GOOGLE_API_KEY", None)
+            with self.assertRaises(ValueError) as ctx:
+                _read_api_key()
+            self.assertIn("could not be read", str(ctx.exception))
+
+    def test_no_key_anywhere_is_none(self):
+        with patch.dict(os.environ, {}, clear=False):
+            for v in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY_FILE"):
+                os.environ.pop(v, None)
+            self.assertIsNone(_read_api_key())
 
 
 class TestValidation(unittest.TestCase):

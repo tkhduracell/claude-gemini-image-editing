@@ -2,7 +2,7 @@
 # Contains only the MCP server and its open-source deps (no Claude Code, no keys).
 #
 # Run with -i (stdio transport) and inherit the key from the environment:
-#   docker run --rm -i -e GEMINI_API_KEY -v "$PWD/images:/images" ghcr.io/tkhduracell/gemini-image:0.2.0
+#   docker run --rm -i -e GEMINI_API_KEY -v "$PWD/images:/images" ghcr.io/tkhduracell/gemini-image:0.2.1
 #
 # `-e GEMINI_API_KEY` with no value is deliberate: Docker copies the variable in
 # from the caller's environment, so the key never appears in an image, a manifest
