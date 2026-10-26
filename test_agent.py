@@ -40,8 +40,28 @@ def _mock_client(
     return mock_client
 
 
-class TestGeminiImageAgent(unittest.IsolatedAsyncioTestCase):
+class _KeyedTestCase(unittest.IsolatedAsyncioTestCase):
+    """Base for tests that exercise the image tools with a mocked client.
+
+    Pins a dummy API key for the duration. Without this the tools call
+    _ensure_api_key first and raise before reaching the mock whenever the
+    machine running the suite has no key - which is every CI runner, and is
+    exactly how this was caught.
+    """
+
     def setUp(self):
+        self._key_env = patch.dict(
+            os.environ, {"GEMINI_API_KEY": "test-key-not-real"}, clear=False
+        )
+        self._key_env.start()
+        self.addCleanup(self._key_env.stop)
+        server.client = None
+        super().setUp()
+
+
+class TestGeminiImageAgent(_KeyedTestCase):
+    def setUp(self):
+        super().setUp()
         # Create a temporary file for image tests
         self.test_dir = tempfile.TemporaryDirectory()
         self.test_image_path = os.path.join(self.test_dir.name, "test.png")
@@ -404,7 +424,7 @@ class TestElicitation(unittest.IsolatedAsyncioTestCase):
         ctx.elicit.assert_not_awaited()
 
 
-class TestValidation(unittest.IsolatedAsyncioTestCase):
+class TestValidation(_KeyedTestCase):
     """Per-model capability validation."""
 
     def test_21_9_aspect_ratio_is_now_valid(self):
@@ -568,7 +588,7 @@ class TestValidation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rf["mime_type"], "image/jpeg")
 
 
-class TestStoreParameter(unittest.IsolatedAsyncioTestCase):
+class TestStoreParameter(_KeyedTestCase):
     @patch("server._get_client")
     async def test_store_defaults_true(self, mock_get_client):
         mock_client = _mock_client()
@@ -695,7 +715,7 @@ class TestHostOutputDir(unittest.TestCase):
         self.assertEqual(path, "/elsewhere/gen_1.png")
 
 
-class TestInputSizeCap(unittest.IsolatedAsyncioTestCase):
+class TestInputSizeCap(_KeyedTestCase):
     def test_oversized_input_image_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "big.png")
