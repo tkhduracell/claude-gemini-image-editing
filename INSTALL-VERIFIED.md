@@ -1,7 +1,7 @@
 # Plugin install — verified walkthrough
 
 Every step below was executed on 2026-10-25 against the published
-`ghcr.io/tkhduracell/gemini-image:0.2.2`, with the actual output recorded. This
+`ghcr.io/tkhduracell/gemini-image:0.3.0`, with the actual output recorded. This
 is not a dry run written from the docs.
 
 ## Prerequisites
@@ -40,7 +40,7 @@ terminal-launched Claude Code keeps working as before.
 ## 2. Pull the image (optional)
 
 ```bash
-docker pull ghcr.io/tkhduracell/gemini-image:0.2.2
+docker pull ghcr.io/tkhduracell/gemini-image:0.3.0
 ```
 
 Optional — Docker pulls on first run. Doing it up front turns a slow first
@@ -88,7 +88,7 @@ claude mcp list
 > ```
 > plugin:gemini-image-editing:gemini-image: docker run --rm -i -e GEMINI_API_KEY
 >   -e GEMINI_MODEL_NAME -e HOST_OUTPUT_DIR -v /your/project/images:/images
->   ghcr.io/tkhduracell/gemini-image:0.2.2 - ✔ Connected
+>   ghcr.io/tkhduracell/gemini-image:0.3.0 - ✔ Connected
 > ```
 
 Two things this confirms beyond "it starts": `${CLAUDE_PROJECT_DIR}` expanded to
@@ -141,7 +141,7 @@ text that looks like success.
 
 | Symptom | Cause |
 | :--- | :--- |
-| Server fails at startup | Docker not running, or the image cannot be pulled. Try `docker pull ghcr.io/tkhduracell/gemini-image:0.2.2` directly. |
+| Server fails at startup | Docker not running, or the image cannot be pulled. Try `docker pull ghcr.io/tkhduracell/gemini-image:0.3.0` directly. |
 | `get_help` reports no key | The key file is missing or empty. GUI apps do not read `~/.zshrc`, so an exported env var does not reach the plugin — create `~/.config/gemini/api.key` as in step 1 and restart Claude Code. |
 | `HTTP 402 … prepayment credits are depleted` | Account-level billing, not a bug. Affects text calls too. Top up at the `ai.studio/projects` link in the error. |
 | `HTTP 400 … thinking level X is not supported` | That level is not valid for the active model. See the table above, or omit `thinking_level`. |

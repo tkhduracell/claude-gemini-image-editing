@@ -159,31 +159,63 @@ Deliberate details:
 - **Cloud/CI.** Use the platform's secret store, which injects an env var. That
   path is already supported and takes precedence.
 
-## The remaining ceiling: elicitation
+## Elicitation: the setup step removed (implemented in 0.3.0)
 
-Even with a one-command setup, the user still performs a step before the tool
-works. MCP 2.x offers a way to remove it entirely: **elicitation**
-(`ElicitRequest` / `ElicitResult` in `mcp.types`) lets a *server* ask the
-*client* to prompt the user, mid-session.
+The server now asks for the key itself. On a tool call with no key available
+it sends an `elicitation/create` request; the client prompts the user; the key
+comes back and is saved. Install is two slash commands and the first image
+request collects the credential inline.
 
-That changes the shape of the problem. Instead of failing with instructions,
-the server would, on finding no key:
+Verified over real stdio against the published container:
 
-1. Send an `ElicitRequest` asking for the API key.
-2. Receive it through `ElicitResult`.
-3. Use it for the session, and offer to persist it.
+```
+→ initialize (capabilities: {"elicitation": {"form": {}}})
+← elicitation/create  "A Gemini API key is needed to generate images…"
+                      requestedSchema properties: ["api_key"]
+→ {"action": "accept", "content": {"api_key": "…"}}
+← tool proceeds to call the API
+  host file: exists, mode 0600
+```
 
-Install becomes `/plugin install`, and the first image request asks for a key
-inline — no slash command, no file, no docs step.
+A second run reads the persisted key and does **not** prompt again.
 
-Two things to settle before building it:
+### How the two open questions resolved
 
-- **Persistence.** The container is `--rm` and mounts the config directory
-  `:ro`, so it cannot save the key itself. Either the mount becomes writable
-  (widening what the container can touch) or the client persists it. The
-  read-only mount is deliberate, so this needs thought rather than a flag flip.
-- **Client support.** Elicitation is capability-negotiated: a client that does
-  not advertise it gets no prompt. The current behaviour — search paths, then
-  an error that explains the fix — stays as the fallback either way.
+**Persistence.** The config mount is now writable (`:ro` dropped) and the
+server writes the key with `os.open(..., 0o600)` — permissions set at
+creation rather than created-then-chmodded, so there is no window where the
+file is world-readable. Writing only happens to a path whose parent directory
+already exists, so the server never builds a directory tree in someone's home.
+Persisting is **best effort**: if nothing is writable the key is used for the
+session and the user is asked again next time, rather than the request failing.
 
-Worth doing, and strictly better than what is here now. Not done yet.
+Dropping `:ro` is a real widening — the container can now write to
+`~/.config/gemini`. It is scoped to that one directory, and it is what buys
+"answer once" instead of "answer every session".
+
+**Capability negotiation.** `_client_supports_elicitation()` checks what the
+client advertised at initialize. A client that did not advertise it is never
+sent a prompt it would ignore; it gets the actionable error instead. Verified
+both ways: a client declaring `{"elicitation": {"form": {}}}` is prompted, a
+client declaring `{}` gets the instructions.
+
+### Deliberate behaviours
+
+- **Decline and cancel are respected.** Neither re-prompts; both raise the
+  actionable error. A user who says no is not asked again in a loop.
+- **Elicitation failure degrades, never crashes.** The `except` is broad on
+  purpose: the failure modes are whatever the client does — timeout, transport
+  error, malformed response, an unimplemented method behind an advertised
+  capability. All of them fall back to the instructions.
+- **Enterprise/ADC mode skips elicitation entirely**, since no API key is
+  wanted there.
+- **The key is set in `os.environ` after collection**, so a later call in the
+  same session does not prompt again even when persisting failed.
+- **`ctx` is hidden from the tool schema** — the client-visible parameters are
+  unchanged.
+
+### Cost
+
+The three image tools became `async def`, because `Context.elicit` is a
+coroutine. `get_help` stays synchronous. The public tool surface did not
+change.

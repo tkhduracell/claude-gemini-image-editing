@@ -2,7 +2,7 @@ import asyncio
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Import functions to test from server
 import server
@@ -40,7 +40,7 @@ def _mock_client(
     return mock_client
 
 
-class TestGeminiImageAgent(unittest.TestCase):
+class TestGeminiImageAgent(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # Create a temporary file for image tests
         self.test_dir = tempfile.TemporaryDirectory()
@@ -67,7 +67,7 @@ class TestGeminiImageAgent(unittest.TestCase):
             _get_image_data("non_existent_file.png")
 
     @patch("server._get_client")
-    def test_generate_image_success(self, mock_get_client):
+    async def test_generate_image_success(self, mock_get_client):
         """Test generate_image tool with mocked Interactions API response.
 
         thinking_level='medium' is valid under the default model
@@ -76,7 +76,7 @@ class TestGeminiImageAgent(unittest.TestCase):
         mock_get_client.return_value = _mock_client(interaction_id="int_123")
 
         with patch("server.open", unittest.mock.mock_open()):
-            result = generate_image(
+            result = await generate_image(
                 prompt="test prompt",
                 aspect_ratio="1:1",
                 thinking_level="medium",
@@ -85,7 +85,7 @@ class TestGeminiImageAgent(unittest.TestCase):
             self.assertIn("int_123", result)
 
     @patch("server._get_client")
-    def test_generate_image_no_output_image(self, mock_get_client):
+    async def test_generate_image_no_output_image(self, mock_get_client):
         """Test generate_image tool when no output image is returned by the API."""
         mock_client = MagicMock()
         mock_interaction = MagicMock()
@@ -94,25 +94,25 @@ class TestGeminiImageAgent(unittest.TestCase):
         mock_client.interactions.create.return_value = mock_interaction
         mock_get_client.return_value = mock_client
 
-        result = generate_image(
+        result = await generate_image(
             prompt="test prompt", aspect_ratio="1:1", thinking_level="medium"
         )
         self.assertIn("🟢 Interaction completed successfully.", result)
         self.assertIn("No direct image output was found", result)
 
     @patch("server._get_client")
-    def test_generate_image_failure_raises(self, mock_get_client):
+    async def test_generate_image_failure_raises(self, mock_get_client):
         """API failures must raise a real MCP ToolError, not return a string."""
         mock_client = MagicMock()
         mock_client.interactions.create.side_effect = Exception("API Key expired")
         mock_get_client.return_value = mock_client
 
         with self.assertRaises(ToolError) as ctx:
-            generate_image(prompt="test prompt")
+            await generate_image(prompt="test prompt")
         self.assertIn("API Key expired", str(ctx.exception))
 
     @patch("server._get_client")
-    def test_edit_image_success(self, mock_get_client):
+    async def test_edit_image_success(self, mock_get_client):
         """Test edit_image tool with mocked Interactions API response."""
         # Use a valid base64-encoded string
         mock_get_client.return_value = _mock_client(
@@ -122,32 +122,32 @@ class TestGeminiImageAgent(unittest.TestCase):
         )
 
         with patch("server.open", unittest.mock.mock_open()):
-            result = edit_image(
+            result = await edit_image(
                 previous_interaction_id="int_123", edit_prompt="add stars"
             )
             self.assertIn("🟢 Image successfully saved!", result)
             self.assertIn("int_456", result)
 
     @patch("server._get_client")
-    def test_edit_image_always_stores(self, mock_get_client):
+    async def test_edit_image_always_stores(self, mock_get_client):
         """edit_image must keep store=True so the edit chain stays usable."""
         mock_client = _mock_client()
         mock_get_client.return_value = mock_client
 
         with patch("server.open", unittest.mock.mock_open()):
-            edit_image(previous_interaction_id="int_1", edit_prompt="add stars")
+            await edit_image(previous_interaction_id="int_1", edit_prompt="add stars")
 
         self.assertIs(mock_client.interactions.create.call_args.kwargs["store"], True)
 
     @patch("server._get_client")
-    def test_edit_image_failure_raises(self, mock_get_client):
+    async def test_edit_image_failure_raises(self, mock_get_client):
         """edit_image surfaces failures as ToolError."""
         mock_client = MagicMock()
         mock_client.interactions.create.side_effect = Exception("bad chain")
         mock_get_client.return_value = mock_client
 
         with self.assertRaises(ToolError):
-            edit_image(previous_interaction_id="int_1", edit_prompt="x")
+            await edit_image(previous_interaction_id="int_1", edit_prompt="x")
 
     def test_mcp_tools_registered(self):
         """Verify that the expected tools are registered to the MCP server.
@@ -305,7 +305,106 @@ class TestApiKeyResolution(unittest.TestCase):
         self.assertIn("aistudio.google.com/apikey", msg)
 
 
-class TestValidation(unittest.TestCase):
+class TestElicitation(unittest.IsolatedAsyncioTestCase):
+    """The server asks the client for a key when it has none."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        p = patch.object(
+            server, "DEFAULT_KEY_PATHS", (os.path.join(self._tmp.name, "api.key"),)
+        )
+        p.start()
+        self.addCleanup(p.stop)
+        self._env = patch.dict(os.environ, {}, clear=False)
+        self._env.start()
+        self.addCleanup(self._env.stop)
+        for v in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY_FILE"):
+            os.environ.pop(v, None)
+        server.client = None
+
+    def _ctx(self, *, supports=True, action="accept", key="elicited-key"):
+        ctx = MagicMock()
+        caps = MagicMock()
+        caps.elicitation = MagicMock() if supports else None
+        ctx.request_context.session.client_params.capabilities = caps
+        result = MagicMock()
+        result.action = action
+        result.data = MagicMock(api_key=key) if action == "accept" else None
+        ctx.elicit = AsyncMock(return_value=result)
+        return ctx
+
+    async def test_prompts_and_persists_when_no_key(self):
+        ctx = self._ctx()
+        await server._ensure_api_key(ctx)
+        ctx.elicit.assert_awaited_once()
+        self.assertEqual(os.environ["GEMINI_API_KEY"], "elicited-key")
+        saved = os.path.join(self._tmp.name, "api.key")
+        self.assertTrue(os.path.exists(saved))
+        # Blocking read of a tiny file in a test; nothing shares this loop.
+        with open(saved, encoding="utf-8") as f:  # noqa: ASYNC230
+            self.assertEqual(f.read(), "elicited-key")
+        # 0600 from creation, not created-then-chmodded
+        self.assertEqual(os.stat(saved).st_mode & 0o777, 0o600)
+
+    async def test_no_prompt_when_key_already_present(self):
+        os.environ["GEMINI_API_KEY"] = "already-here"
+        ctx = self._ctx()
+        await server._ensure_api_key(ctx)
+        ctx.elicit.assert_not_awaited()
+
+    async def test_declined_raises_actionable_error(self):
+        ctx = self._ctx(action="decline")
+        with self.assertRaises(ToolError) as e:
+            await server._ensure_api_key(ctx)
+        self.assertIn("/gemini-setup-key", str(e.exception))
+
+    async def test_cancelled_raises(self):
+        ctx = self._ctx(action="cancel")
+        with self.assertRaises(ToolError):
+            await server._ensure_api_key(ctx)
+
+    async def test_client_without_capability_is_not_prompted(self):
+        """An unsupporting client must get the instructions, not a dead prompt."""
+        ctx = self._ctx(supports=False)
+        with self.assertRaises(ToolError) as e:
+            await server._ensure_api_key(ctx)
+        ctx.elicit.assert_not_awaited()
+        self.assertIn("/gemini-setup-key", str(e.exception))
+
+    async def test_no_context_falls_back_to_error(self):
+        with self.assertRaises(ToolError) as e:
+            await server._ensure_api_key(None)
+        self.assertIn("/gemini-setup-key", str(e.exception))
+
+    async def test_elicit_failure_degrades_to_error(self):
+        """A client that advertises elicitation but errors must not crash opaquely."""
+        ctx = self._ctx()
+        ctx.elicit = AsyncMock(side_effect=RuntimeError("transport died"))
+        with self.assertRaises(ToolError) as e:
+            await server._ensure_api_key(ctx)
+        self.assertIn("/gemini-setup-key", str(e.exception))
+
+    async def test_empty_key_from_user_is_rejected(self):
+        ctx = self._ctx(key="   ")
+        with self.assertRaises(ToolError):
+            await server._ensure_api_key(ctx)
+
+    async def test_works_when_nothing_is_writable(self):
+        """Persisting is best effort - a read-only mount must still work."""
+        ctx = self._ctx()
+        with patch.object(server, "_writable_key_path", return_value=None):
+            await server._ensure_api_key(ctx)
+        self.assertEqual(os.environ["GEMINI_API_KEY"], "elicited-key")
+
+    async def test_enterprise_mode_skips_elicitation(self):
+        ctx = self._ctx()
+        with patch.object(server, "_use_enterprise", return_value=True):
+            await server._ensure_api_key(ctx)
+        ctx.elicit.assert_not_awaited()
+
+
+class TestValidation(unittest.IsolatedAsyncioTestCase):
     """Per-model capability validation."""
 
     def test_21_9_aspect_ratio_is_now_valid(self):
@@ -336,19 +435,21 @@ class TestValidation(unittest.TestCase):
         self.assertIn("7:3", str(ctx.exception))
 
     @patch("server._get_client")
-    def test_validation_invalid_aspect_ratio_raises_toolerror(self, mock_get_client):
+    async def test_validation_invalid_aspect_ratio_raises_toolerror(
+        self, mock_get_client
+    ):
         """Through the tool surface, bad input becomes a ToolError."""
         mock_get_client.return_value = _mock_client()
         with self.assertRaises(ToolError) as ctx:
-            generate_image(prompt="test", aspect_ratio="7:3")
+            await generate_image(prompt="test", aspect_ratio="7:3")
         self.assertIn("7:3", str(ctx.exception))
 
     @patch("server._get_client")
-    def test_validation_invalid_thinking_level(self, mock_get_client):
+    async def test_validation_invalid_thinking_level(self, mock_get_client):
         """An unsupported thinking level raises ToolError (was a 🔴 string)."""
         mock_get_client.return_value = _mock_client()
         with self.assertRaises(ToolError) as ctx:
-            generate_image(prompt="test", thinking_level="ultra")
+            await generate_image(prompt="test", thinking_level="ultra")
         self.assertIn("ultra", str(ctx.exception))
 
     def test_thinking_level_is_per_model(self):
@@ -444,7 +545,7 @@ class TestValidation(unittest.TestCase):
         _validate_inputs(mime_type="image/jpeg")
 
     @patch("server._get_client")
-    def test_image_size_and_mime_type_threaded_into_response_format(
+    async def test_image_size_and_mime_type_threaded_into_response_format(
         self, mock_get_client
     ):
         """New params must reach response_format."""
@@ -452,7 +553,7 @@ class TestValidation(unittest.TestCase):
         mock_get_client.return_value = mock_client
 
         with patch("server.open", unittest.mock.mock_open()):
-            generate_image(
+            await generate_image(
                 prompt="p",
                 aspect_ratio="16:9",
                 thinking_level="medium",
@@ -467,33 +568,35 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(rf["mime_type"], "image/jpeg")
 
 
-class TestStoreParameter(unittest.TestCase):
+class TestStoreParameter(unittest.IsolatedAsyncioTestCase):
     @patch("server._get_client")
-    def test_store_defaults_true(self, mock_get_client):
+    async def test_store_defaults_true(self, mock_get_client):
         mock_client = _mock_client()
         mock_get_client.return_value = mock_client
         with patch("server.open", unittest.mock.mock_open()):
-            generate_image(prompt="p")
+            await generate_image(prompt="p")
         self.assertIs(mock_client.interactions.create.call_args.kwargs["store"], True)
 
     @patch("server._get_client")
-    def test_store_can_be_disabled(self, mock_get_client):
+    async def test_store_can_be_disabled(self, mock_get_client):
         mock_client = _mock_client()
         mock_get_client.return_value = mock_client
         with patch("server.open", unittest.mock.mock_open()):
-            generate_image(prompt="p", store=False)
+            await generate_image(prompt="p", store=False)
         self.assertIs(mock_client.interactions.create.call_args.kwargs["store"], False)
 
     @patch("server._get_client")
-    def test_edit_local_image_store_can_be_disabled(self, mock_get_client):
+    async def test_edit_local_image_store_can_be_disabled(self, mock_get_client):
         mock_client = _mock_client()
         mock_get_client.return_value = mock_client
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "in.png")
-            with open(path, "wb") as f:
+            # Blocking write of a tiny fixture; nothing else runs on this
+            # loop, so it cannot starve anything.
+            with open(path, "wb") as f:  # noqa: ASYNC230
                 f.write(b"\x89PNG\r\n\x1a\n")
             with patch("server.open", unittest.mock.mock_open(read_data=b"x")):
-                edit_local_image(image_path=path, edit_prompt="e", store=False)
+                await edit_local_image(image_path=path, edit_prompt="e", store=False)
         self.assertIs(mock_client.interactions.create.call_args.kwargs["store"], False)
 
 
@@ -592,7 +695,7 @@ class TestHostOutputDir(unittest.TestCase):
         self.assertEqual(path, "/elsewhere/gen_1.png")
 
 
-class TestInputSizeCap(unittest.TestCase):
+class TestInputSizeCap(unittest.IsolatedAsyncioTestCase):
     def test_oversized_input_image_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "big.png")
@@ -617,17 +720,17 @@ class TestInputSizeCap(unittest.TestCase):
         self.assertEqual(data["mime_type"], "image/png")
 
     @patch("server._get_client")
-    def test_oversized_input_surfaces_as_toolerror(self, mock_get_client):
+    async def test_oversized_input_surfaces_as_toolerror(self, mock_get_client):
         mock_get_client.return_value = _mock_client()
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "big.png")
-            with open(path, "wb") as f:
+            with open(path, "wb") as f:  # noqa: ASYNC230
                 f.write(b"\x00" * (2 * 1024 * 1024))
             with (
                 patch.dict(os.environ, {"MAX_INPUT_IMAGE_MB": "1"}, clear=False),
                 self.assertRaises(ToolError) as ctx,
             ):
-                edit_local_image(image_path=path, edit_prompt="e")
+                await edit_local_image(image_path=path, edit_prompt="e")
         self.assertIn("too large", str(ctx.exception))
 
     def test_default_cap_is_20_mb(self):

@@ -8,7 +8,7 @@ import uuid
 from typing import Any, cast
 
 from google import genai
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 
 # ToolError lets a failing tool surface a real MCP protocol error instead of a
 # string the calling agent would mistake for a successful result. mcp 2.x hosts
@@ -16,6 +16,7 @@ from mcp.server.mcpserver import MCPServer
 # put the exception under mcp.server.fastmcp); requirements.txt pins mcp>=2, so
 # only the 2.x path is imported here.
 from mcp.server.mcpserver.exceptions import ToolError
+from pydantic import BaseModel, Field
 
 # Initialize the MCP server
 mcp = MCPServer("Gemini Image Editing")
@@ -248,6 +249,126 @@ def _read_api_key() -> str | None:
         if found:
             return found
     return None
+
+
+class _ApiKeyPrompt(BaseModel):
+    """Schema for the key we ask the client to collect. Primitives only."""
+
+    api_key: str = Field(
+        description=(
+            "Your Gemini API key from https://aistudio.google.com/apikey "
+            "(starts with 'AIza')"
+        ),
+    )
+
+
+def _writable_key_path() -> str | None:
+    """Where a newly elicited key can be saved, or None if nowhere is writable.
+
+    Only paths whose parent directory already exists are considered: creating
+    a directory tree in someone's home from a server process is more than this
+    needs to do. In the container the parent is the mounted config directory,
+    which exists whenever the plugin mounted it.
+    """
+    for path in _candidate_key_paths():
+        parent = os.path.dirname(path) or "."
+        if os.path.isdir(parent) and os.access(parent, os.W_OK):
+            return path
+    return None
+
+
+def _persist_api_key(key: str) -> str | None:
+    """Save an elicited key so the next container run finds it. Best effort.
+
+    Returns the path written, or None. Never raises: failing to persist is an
+    inconvenience (the user is asked again next session), not a reason to fail
+    the request the key was collected for.
+    """
+    path = _writable_key_path()
+    if not path:
+        return None
+    try:
+        # 0600 from the moment it exists, rather than created-then-chmodded.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(key)
+    except OSError as e:
+        logger.warning("Could not persist the API key to %s: %s", path, e)
+        return None
+    return path
+
+
+def _client_supports_elicitation(ctx: Context | None) -> bool:
+    """Whether the connected client advertised the elicitation capability.
+
+    Clients that did not must get the old error message instead of a prompt
+    that will never be answered.
+    """
+    if ctx is None:
+        return False
+    try:
+        session = ctx.request_context.session
+        caps = session.client_params.capabilities if session.client_params else None
+        return bool(caps and caps.elicitation)
+    except (AttributeError, LookupError, ValueError):
+        return False
+
+
+async def _elicit_api_key(ctx: Context) -> str | None:
+    """Ask the user for an API key through the client. None if not provided."""
+    result = await ctx.elicit(
+        message=(
+            "A Gemini API key is needed to generate images. "
+            "Get one at https://aistudio.google.com/apikey"
+        ),
+        schema=_ApiKeyPrompt,
+    )
+    if result.action != "accept" or result.data is None:
+        # declined or cancelled - respect it rather than re-prompting
+        return None
+    key = (result.data.api_key or "").strip()
+    if not key:
+        return None
+
+    saved = _persist_api_key(key)
+    if saved:
+        logger.info("Saved the elicited API key to %s", saved)
+    else:
+        logger.info("Using the elicited API key for this session only.")
+    # Make it visible to the rest of this process, so a later call in the same
+    # session does not prompt again even when persisting failed.
+    os.environ["GEMINI_API_KEY"] = key
+    return key
+
+
+async def _ensure_api_key(ctx: Context | None) -> None:
+    """Make sure a key is available, prompting through the client if it is not.
+
+    Raises ToolError with actionable text when no key can be obtained.
+    """
+    if _use_enterprise() or _read_api_key():
+        return
+
+    if _client_supports_elicitation(ctx) and ctx is not None:
+        try:
+            if await _elicit_api_key(ctx):
+                global client
+                client = None  # rebuild with the new key
+                return
+        except Exception as e:  # noqa: BLE001 - see below
+            # Deliberately broad: elicitation crosses the client boundary, so
+            # the failure modes are whatever that client does (timeout,
+            # transport error, malformed response, an unimplemented method
+            # behind an advertised capability). Any of them should degrade to
+            # the actionable missing-key message rather than surface as an
+            # opaque crash from a tool the user asked to generate an image.
+            logger.warning("Elicitation failed: %s", e)
+        raise ToolError(
+            "No Gemini API key was provided. "
+            + NO_KEY_MESSAGE.split("\n", 1)[1].strip()
+        )
+
+    raise ToolError(NO_KEY_MESSAGE)
 
 
 def _get_client() -> genai.Client:
@@ -492,13 +613,14 @@ def _handle_response(interaction: Any, output_prefix: str) -> str:
 
 
 @mcp.tool()
-def generate_image(
+async def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
     thinking_level: str | None = None,
     image_size: str | None = None,
     mime_type: str | None = None,
     store: bool = True,
+    ctx: Context | None = None,
 ) -> str:
     """Generates a new image from a text prompt.
 
@@ -516,6 +638,7 @@ def generate_image(
       from.
     """
     try:
+        await _ensure_api_key(ctx)
         _validate_inputs(
             aspect_ratio=aspect_ratio,
             thinking_level=thinking_level,
@@ -548,11 +671,12 @@ def generate_image(
 
 
 @mcp.tool()
-def edit_image(
+async def edit_image(
     previous_interaction_id: str,
     edit_prompt: str,
     thinking_level: str | None = None,
     image_size: str | None = None,
+    ctx: Context | None = None,
 ) -> str:
     """Edits a previously generated image using its interaction ID.
 
@@ -569,6 +693,7 @@ def edit_image(
     tool always stores the new turn, so the chain can be extended again.
     """
     try:
+        await _ensure_api_key(ctx)
         _validate_inputs(thinking_level=thinking_level, image_size=image_size)
 
         response_format = _build_response_format(image_size=image_size)
@@ -596,7 +721,7 @@ def edit_image(
 
 
 @mcp.tool()
-def edit_local_image(
+async def edit_local_image(
     image_path: str,
     edit_prompt: str,
     aspect_ratio: str = "1:1",
@@ -604,6 +729,7 @@ def edit_local_image(
     image_size: str | None = None,
     mime_type: str | None = None,
     store: bool = True,
+    ctx: Context | None = None,
 ) -> str:
     """Edits a local image using a text prompt description.
 
@@ -623,6 +749,7 @@ def edit_local_image(
       from.
     """
     try:
+        await _ensure_api_key(ctx)
         _validate_inputs(
             aspect_ratio=aspect_ratio,
             thinking_level=thinking_level,

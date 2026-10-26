@@ -100,20 +100,18 @@ MCP server, which runs as a container.
 ```
 /plugin marketplace add tkhduracell/claude-gemini-image-editing
 /plugin install gemini-image-editing@claude-gemini-image-editing
-/gemini-setup-key
 ```
 
-That is the whole install. `/gemini-setup-key` prompts for your key (from
-[AI Studio](https://aistudio.google.com/apikey)) and stores it where the server
-looks. Restart Claude Code afterwards.
+That is the whole install. **Ask for an image and the server prompts for your
+API key inline**, then remembers it — no file to create, no command to run
+first. Get a key at [AI Studio](https://aistudio.google.com/apikey).
 
 > [!NOTE]
-> The key is stored in a **file**, not an environment variable, because a
-> GUI-launched app does not read `~/.zshrc` — an exported `GEMINI_API_KEY`
-> never reaches the container. The server searches `~/.config/gemini/api.key`
-> and a few other conventional paths automatically, so no configuration is
-> needed. An exported `GEMINI_API_KEY` still wins when present, and if no key
-> is found the error tells you exactly how to fix it. See
+> The prompt uses MCP *elicitation*, which the client must support. On a client
+> that does not, the first image request fails with instructions and
+> `/gemini-setup-key` sets the key up instead. An exported `GEMINI_API_KEY`
+> always wins when present. The key is stored in a file rather than an
+> environment variable because GUI-launched apps do not read `~/.zshrc` — see
 > [docs/secrets-design.md](docs/secrets-design.md).
 
 Then in Claude Code:
@@ -198,7 +196,7 @@ docker run --rm -i \
   -e GEMINI_MODEL_NAME \
   -e HOST_OUTPUT_DIR="$PWD/images" \
   -v "$PWD/images:/images" \
-  ghcr.io/tkhduracell/gemini-image:0.2.2
+  ghcr.io/tkhduracell/gemini-image:0.3.0
 ```
 
 ### The output-path gotcha

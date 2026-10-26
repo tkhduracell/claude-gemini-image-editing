@@ -1,7 +1,7 @@
 {
   "name": "gemini-image-editing",
   "description": "Generate and edit images with Google's Gemini image models (Nano Banana 2.1, Nano Banana 2/Pro) via the stateful Interactions API: text-to-image, multi-turn stateful edits, and local-image editing through the gemini-image MCP server.",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "author": {
     "name": "tkhduracell",
     "url": "https://github.com/tkhduracell"
@@ -30,10 +30,10 @@
         "-e",
         "HOST_OUTPUT_DIR",
         "-v",
-        "${HOME}/.config/gemini:/run/secrets:ro",
+        "${HOME}/.config/gemini:/run/secrets",
         "-v",
         "${CLAUDE_PROJECT_DIR}/images:/images",
-        "ghcr.io/tkhduracell/gemini-image:0.2.2"
+        "ghcr.io/tkhduracell/gemini-image:0.3.0"
       ]
     }
   }

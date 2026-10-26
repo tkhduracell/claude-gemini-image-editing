@@ -62,7 +62,12 @@ The manifest passes `-e GEMINI_API_KEY` **by name with no value** on purpose:
 Docker inherits it from the environment, so the key never enters the manifest or
 git. Do not "fix" this by adding a value.
 
-Image: `ghcr.io/tkhduracell/gemini-image`. `VERSION` in the `Makefile` must match
+It also mounts `${HOME}/.config/gemini` **writable** (no `:ro`), so an elicited
+key can be saved for next session, and mounts the **directory** rather than the
+key file — bind-mounting a nonexistent file makes Docker create a directory at
+that path, which would then shadow the real key.
+
+Image: `ghcr.io/tkhduracell/gemini-image` (0.3.0+). `VERSION` in the `Makefile` must match
 `version` in `plugin.json` **and** the tag pinned in its `args` — CI enforces the
 first two.
 
@@ -158,6 +163,22 @@ passed raw would mean a 120 ms timeout and break every call.
   extension defaults to **png** and is derived from the mime type;
   `mimetypes.guess_extension` is only trusted for `image/*`, since
   `application/octet-stream` maps to `.bin`.
+
+### Elicitation
+
+When no API key is available, the three image tools ask the client for one via
+`Context.elicit` (MCP `elicitation/create`) and persist the answer to the
+mounted config directory at mode 0600. This is why those tools are
+`async def` — `Context.elicit` is a coroutine; `get_help` stays sync.
+
+Guard rails worth preserving:
+- `_client_supports_elicitation()` checks the advertised capability first. Never
+  send a prompt to a client that cannot answer it — it would hang.
+- Decline and cancel are respected and must not re-prompt.
+- Elicitation failure degrades to `NO_KEY_MESSAGE`, never an opaque crash.
+- Persisting is best effort; a read-only mount must still work for the session.
+- `ctx: Context | None = None` is injected by the framework and hidden from the
+  client-visible schema. Do not document it as a tool parameter.
 
 ### Errors
 

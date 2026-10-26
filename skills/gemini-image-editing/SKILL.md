@@ -21,9 +21,10 @@ Two ways to act:
 
 ## Standard workflow
 
-1. **Config first.** Call `get_help`. It reports the auth mode, active model,
-   output directory, and `HOST_OUTPUT_DIR`. If auth is missing, stop and tell the
-   user — every other tool will fail.
+1. **Config first.** Call `get_help`. If no API key is set, the server will
+   prompt for one the first time an image tool is used (on clients that support
+   elicitation) — just pass the user's key through. Otherwise `get_help` reports the auth mode, active model, output
+   directory and `HOST_OUTPUT_DIR`, and names the fix when auth is missing.
 2. **Generate.** `generate_image(prompt, …)` saves the image and returns the
    path plus an **interaction ID**.
 3. **Iterate statefully.** `edit_image(previous_interaction_id, edit_prompt)`
